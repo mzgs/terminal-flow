@@ -1,7 +1,9 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
+import type { SshApi, SshServerConfig } from '../shared/ssh'
 import type {
   TerminalApi,
+  TerminalCreateOptions,
   TerminalCwdEvent,
   TerminalDataEvent,
   TerminalExitEvent
@@ -9,7 +11,7 @@ import type {
 
 // Custom APIs for renderer
 const terminal: TerminalApi = {
-  create: () => ipcRenderer.invoke('terminal:create'),
+  create: (options?: TerminalCreateOptions) => ipcRenderer.invoke('terminal:create', options),
   write: (terminalId, data) => ipcRenderer.send('terminal:write', { terminalId, data }),
   resize: (terminalId, cols, rows) =>
     ipcRenderer.send('terminal:resize', { terminalId, cols, rows }),
@@ -49,7 +51,26 @@ const terminal: TerminalApi = {
   }
 }
 
+const ssh: SshApi = {
+  listConfigs: () => ipcRenderer.invoke('ssh:list-configs'),
+  openConfigWindow: () => ipcRenderer.invoke('ssh:open-config-window'),
+  saveConfig: (config) => ipcRenderer.invoke('ssh:save-config', config),
+  closeConfigWindow: () => ipcRenderer.invoke('ssh:close-config-window'),
+  onConfigAdded: (callback) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: SshServerConfig): void => {
+      callback(payload)
+    }
+
+    ipcRenderer.on('ssh:config-added', listener)
+
+    return () => {
+      ipcRenderer.off('ssh:config-added', listener)
+    }
+  }
+}
+
 const api = {
+  ssh,
   terminal,
   webUtils: {
     getPathForFile: (file: File): string => webUtils.getPathForFile(file)

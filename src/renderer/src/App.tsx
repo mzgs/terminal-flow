@@ -4,6 +4,8 @@ import { Terminal } from '@xterm/xterm'
 import { HardDrive, Plus, Server, X } from 'lucide-react'
 import { Reorder, useDragControls } from 'motion/react'
 import '@xterm/xterm/css/xterm.css'
+import type { SshAuthMethod, SshServerConfig, SshServerConfigInput } from '../../shared/ssh'
+import type { TerminalCreateOptions } from '../../shared/terminal'
 
 type TabStatus = 'connecting' | 'ready' | 'closed'
 
@@ -23,6 +25,11 @@ interface TerminalRuntime {
   fitAddon: FitAddon
   terminal: Terminal
   terminalId: number | null
+}
+
+interface CreateTabOptions {
+  terminalCreateOptions?: TerminalCreateOptions
+  title?: string
 }
 
 const defaultTabTitle = '~'
@@ -61,6 +68,18 @@ const terminalOptions = {
     yellow: '#e6c15a'
   }
 } satisfies ConstructorParameters<typeof Terminal>[0]
+
+const sshConfigWindowMode = 'ssh-config'
+
+const defaultSshConfigInput: SshServerConfigInput = {
+  authMethod: 'privateKey',
+  description: '',
+  host: '',
+  name: '',
+  password: '',
+  port: 22,
+  username: ''
+}
 
 function usesWindowsShellQuoting(): boolean {
   return typeof navigator !== 'undefined' && navigator.userAgent.includes('Windows')
@@ -114,12 +133,16 @@ function getPathsFromUriList(dataTransfer: DataTransfer): string[] {
     .filter((value): value is string => Boolean(value))
 }
 
-function quotePathForShell(path: string): string {
+function quoteArgumentForShell(value: string): string {
   if (usesWindowsShellQuoting()) {
-    return /[\s&()[\]{}^=;!'+,`~]/.test(path) ? `"${path}"` : path
+    return /[\s&()[\]{}^=;!'+,`~]/.test(value) ? `"${value}"` : value
   }
 
-  return path.replace(/([^A-Za-z0-9_./-])/g, '\\$1')
+  return value.replace(/([^A-Za-z0-9_./-])/g, '\\$1')
+}
+
+function quotePathForShell(path: string): string {
+  return quoteArgumentForShell(path)
 }
 
 function getTabStatusLabel(tab: TabRecord): string {
@@ -210,10 +233,256 @@ function SshIcon(): React.JSX.Element {
   return <Server aria-hidden="true" className="tab-action-icon" />
 }
 
-function App(): React.JSX.Element {
+function formatSshTarget(config: Pick<SshServerConfigInput, 'host' | 'port' | 'username'>): string {
+  return `${config.username}@${config.host}:${config.port}`
+}
+
+function buildSshTerminalCreateOptions(config: SshServerConfig): TerminalCreateOptions {
+  const args: string[] = []
+
+  if (config.authMethod === 'password') {
+    args.push('-o', 'PreferredAuthentications=password', '-o', 'PubkeyAuthentication=no')
+  }
+
+  args.push('-p', String(config.port), `${config.username}@${config.host}`)
+
+  return {
+    args,
+    command: 'ssh',
+    title: config.name,
+    trackCwd: false
+  }
+}
+
+function upsertSshServers(
+  currentConfigs: SshServerConfig[],
+  nextConfigs: SshServerConfig[]
+): SshServerConfig[] {
+  const configsById = new Map(currentConfigs.map((config) => [config.id, config]))
+
+  for (const config of nextConfigs) {
+    configsById.set(config.id, config)
+  }
+
+  return Array.from(configsById.values())
+}
+
+function SshConfigWindow(): React.JSX.Element {
+  const [formState, setFormState] = useState<SshServerConfigInput>(defaultSshConfigInput)
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [isSaving, setIsSaving] = useState(false)
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent): void => {
+      if (event.key !== 'Escape') {
+        return
+      }
+
+      void window.api.ssh.closeConfigWindow()
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [])
+
+  const updateField = useCallback(function updateField<TField extends keyof SshServerConfigInput>(
+    field: TField,
+    value: SshServerConfigInput[TField]
+  ): void {
+    setFormState((currentState) => ({
+      ...currentState,
+      [field]: value
+    }))
+    setErrorMessage(null)
+  }, [])
+
+  const updateAuthMethod = useCallback((authMethod: SshAuthMethod): void => {
+    setFormState((currentState) => ({
+      ...currentState,
+      authMethod,
+      password: authMethod === 'password' ? currentState.password : ''
+    }))
+    setErrorMessage(null)
+  }, [])
+
+  const handleCancel = useCallback((): void => {
+    if (isSaving) {
+      return
+    }
+
+    void window.api.ssh.closeConfigWindow()
+  }, [isSaving])
+
+  const handleSubmit = useCallback(
+    async (event: React.FormEvent<HTMLFormElement>): Promise<void> => {
+      event.preventDefault()
+
+      const normalizedFormState: SshServerConfigInput = {
+        ...formState,
+        description: formState.description.trim(),
+        host: formState.host.trim(),
+        name: formState.name.trim(),
+        port: Number.isFinite(formState.port) ? Math.max(1, Math.floor(formState.port)) : 22,
+        username: formState.username.trim()
+      }
+
+      if (!normalizedFormState.name || !normalizedFormState.host || !normalizedFormState.username) {
+        setErrorMessage('Name, host, and username are required.')
+        return
+      }
+
+      if (normalizedFormState.authMethod === 'password' && normalizedFormState.password === '') {
+        setErrorMessage('Add a password for password authentication.')
+        return
+      }
+
+      setIsSaving(true)
+
+      try {
+        await window.api.ssh.saveConfig(normalizedFormState)
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        setErrorMessage(message || 'Unable to save this SSH server.')
+        setIsSaving(false)
+      }
+    },
+    [formState]
+  )
+
+  return (
+    <main className="ssh-config-window">
+      <section className="ssh-config-card">
+        <div className="ssh-config-header">
+          <span className="ssh-config-eyebrow">SSH Server</span>
+          <h1 className="ssh-config-title">Add SSH server config</h1>
+          <p className="ssh-config-copy">
+            Save a host definition in the main window menu for this session.
+          </p>
+        </div>
+        <form className="ssh-config-form" onSubmit={handleSubmit}>
+          <label className="ssh-field">
+            <span className="ssh-field-label">Connection name</span>
+            <input
+              autoFocus
+              className="ssh-field-input"
+              onChange={(event) => updateField('name', event.target.value)}
+              placeholder="Production API"
+              type="text"
+              value={formState.name}
+            />
+          </label>
+          <div className="ssh-config-grid">
+            <label className="ssh-field">
+              <span className="ssh-field-label">Host</span>
+              <input
+                className="ssh-field-input"
+                onChange={(event) => updateField('host', event.target.value)}
+                placeholder="server.example.com"
+                type="text"
+                value={formState.host}
+              />
+            </label>
+            <label className="ssh-field">
+              <span className="ssh-field-label">Port</span>
+              <input
+                className="ssh-field-input"
+                min={1}
+                onChange={(event) => updateField('port', Number(event.target.value) || 22)}
+                placeholder="22"
+                type="number"
+                value={formState.port}
+              />
+            </label>
+          </div>
+          <label className="ssh-field">
+            <span className="ssh-field-label">Username</span>
+            <input
+              className="ssh-field-input"
+              onChange={(event) => updateField('username', event.target.value)}
+              placeholder="ubuntu"
+              type="text"
+              value={formState.username}
+            />
+          </label>
+          <div className="ssh-field">
+            <span className="ssh-field-label">Authentication</span>
+            <div className="ssh-auth-options" role="radiogroup">
+              <button
+                aria-checked={formState.authMethod === 'privateKey'}
+                className={`ssh-auth-option${formState.authMethod === 'privateKey' ? ' is-active' : ''}`}
+                onClick={() => updateAuthMethod('privateKey')}
+                role="radio"
+                type="button"
+              >
+                Private key
+              </button>
+              <button
+                aria-checked={formState.authMethod === 'password'}
+                className={`ssh-auth-option${formState.authMethod === 'password' ? ' is-active' : ''}`}
+                onClick={() => updateAuthMethod('password')}
+                role="radio"
+                type="button"
+              >
+                Password
+              </button>
+            </div>
+          </div>
+          {formState.authMethod === 'privateKey' ? (
+            <div className="ssh-field ssh-field-note" role="note">
+              <span className="ssh-field-label">Private key</span>
+              <p className="ssh-field-help">
+                The terminal will use your existing SSH keys or SSH agent automatically.
+              </p>
+            </div>
+          ) : (
+            <label className="ssh-field">
+              <span className="ssh-field-label">Password</span>
+              <input
+                className="ssh-field-input"
+                onChange={(event) => updateField('password', event.target.value)}
+                placeholder="Enter the account password"
+                type="password"
+                value={formState.password}
+              />
+            </label>
+          )}
+          <label className="ssh-field">
+            <span className="ssh-field-label">Description</span>
+            <textarea
+              className="ssh-field-input ssh-field-textarea"
+              onChange={(event) => updateField('description', event.target.value)}
+              placeholder="Optional note for teammates or environment details"
+              rows={4}
+              value={formState.description}
+            />
+          </label>
+          <div className="ssh-config-preview">
+            <span className="ssh-config-preview-label">Target</span>
+            <strong>{formatSshTarget(formState)}</strong>
+          </div>
+          {errorMessage ? <p className="ssh-config-error">{errorMessage}</p> : null}
+          <div className="ssh-config-actions">
+            <button className="ssh-config-secondary" onClick={handleCancel} type="button">
+              Cancel
+            </button>
+            <button className="ssh-config-primary" disabled={isSaving} type="submit">
+              {isSaving ? 'Saving...' : 'Save Server'}
+            </button>
+          </div>
+        </form>
+      </section>
+    </main>
+  )
+}
+
+function TerminalApp(): React.JSX.Element {
   const [tabs, setTabs] = useState<TabRecord[]>([])
   const [activeTabId, setActiveTabId] = useState<string | null>(null)
   const [isSshMenuOpen, setIsSshMenuOpen] = useState(false)
+  const [sshServers, setSshServers] = useState<SshServerConfig[]>([])
   const nextTabIdRef = useRef(1)
   const workspaceRef = useRef<HTMLDivElement>(null)
   const tabStripRef = useRef<HTMLDivElement>(null)
@@ -224,6 +493,7 @@ function App(): React.JSX.Element {
   const runtimesRef = useRef(new Map<string, TerminalRuntime>())
   const terminalToTabRef = useRef(new Map<number, string>())
   const pendingTitlesRef = useRef(new Map<number, string>())
+  const pendingInitialTabStateRef = useRef(new Map<string, CreateTabOptions>())
   const isUnmountingRef = useRef(false)
   const emptyStateCreateQueuedRef = useRef(false)
   const pendingActivationTabIdRef = useRef<string | null>(null)
@@ -319,10 +589,18 @@ function App(): React.JSX.Element {
     runtimesRef.current.delete(tabId)
   }, [])
 
-  const createTab = useCallback((): void => {
+  const createTab = useCallback((options?: CreateTabOptions): void => {
     const tabId = `tab-${nextTabIdRef.current++}`
     const shouldActivateImmediately =
       activeTabIdRef.current === null || tabsRef.current.length === 0
+    const nextTitle = options?.title?.trim() || defaultTabTitle
+
+    if (options?.terminalCreateOptions || options?.title) {
+      pendingInitialTabStateRef.current.set(tabId, {
+        terminalCreateOptions: options.terminalCreateOptions,
+        title: options.title?.trim()
+      })
+    }
 
     setTabs((currentTabs) => [
       ...currentTabs,
@@ -330,7 +608,7 @@ function App(): React.JSX.Element {
         id: tabId,
         status: 'connecting',
         terminalId: null,
-        title: defaultTabTitle
+        title: nextTitle
       }
     ])
 
@@ -356,6 +634,7 @@ function App(): React.JSX.Element {
         pendingActivationTabIdRef.current = null
       }
 
+      pendingInitialTabStateRef.current.delete(tabId)
       const remainingTabs = currentTabs.filter((tab) => tab.id !== tabId)
 
       disposeTabRuntime(tabId, true)
@@ -426,8 +705,10 @@ function App(): React.JSX.Element {
         syncActiveTabLayout(tabId, true)
       }
 
+      const pendingInitialTabState = pendingInitialTabStateRef.current.get(tabId)
+
       window.api.terminal
-        .create()
+        .create(pendingInitialTabState?.terminalCreateOptions)
         .then(({ terminalId, title }) => {
           const currentRuntime = runtimesRef.current.get(tabId)
 
@@ -443,9 +724,12 @@ function App(): React.JSX.Element {
             ...tab,
             status: 'ready',
             terminalId,
-            title: pendingTitlesRef.current.get(terminalId) ?? title
+            title:
+              pendingInitialTabState?.title ?? pendingTitlesRef.current.get(terminalId) ?? title
           }))
           pendingTitlesRef.current.delete(terminalId)
+
+          pendingInitialTabStateRef.current.delete(tabId)
 
           if (pendingActivationTabIdRef.current === tabId) {
             pendingActivationTabIdRef.current = null
@@ -459,6 +743,8 @@ function App(): React.JSX.Element {
         .catch((error) => {
           const currentRuntime = runtimesRef.current.get(tabId)
           const message = error instanceof Error ? error.message : String(error)
+
+          pendingInitialTabStateRef.current.delete(tabId)
 
           if (!currentRuntime || currentRuntime.disposed) {
             return
@@ -708,6 +994,7 @@ function App(): React.JSX.Element {
   useEffect(() => {
     const hostElements = hostElementsRef.current
     const runtimes = runtimesRef.current
+    const pendingInitialTabState = pendingInitialTabStateRef.current
 
     return () => {
       isUnmountingRef.current = true
@@ -716,6 +1003,7 @@ function App(): React.JSX.Element {
         disposeTabRuntime(tabId, true)
       }
 
+      pendingInitialTabState.clear()
       hostElements.clear()
     }
   }, [disposeTabRuntime])
@@ -816,6 +1104,54 @@ function App(): React.JSX.Element {
     [writeDroppedPathsToActiveTerminal]
   )
 
+  const handleOpenSshConfigWindow = useCallback((): void => {
+    setIsSshMenuOpen(false)
+    void window.api.ssh.openConfigWindow()
+  }, [])
+
+  const handleConnectToSshServer = useCallback(
+    (server: SshServerConfig): void => {
+      setIsSshMenuOpen(false)
+      createTab({
+        terminalCreateOptions: buildSshTerminalCreateOptions(server),
+        title: server.name
+      })
+    },
+    [createTab]
+  )
+
+  useEffect(() => {
+    let didCancel = false
+
+    void window.api.ssh
+      .listConfigs()
+      .then((configs) => {
+        if (didCancel) {
+          return
+        }
+
+        setSshServers((currentConfigs) => upsertSshServers(currentConfigs, configs))
+      })
+      .catch((error) => {
+        console.error('Unable to load saved SSH servers.', error)
+      })
+
+    return () => {
+      didCancel = true
+    }
+  }, [])
+
+  useEffect(() => {
+    const disposeConfigAdded = window.api.ssh.onConfigAdded((config) => {
+      setSshServers((currentConfigs) => upsertSshServers(currentConfigs, [config]))
+      setIsSshMenuOpen(false)
+    })
+
+    return () => {
+      disposeConfigAdded()
+    }
+  }, [])
+
   useEffect(() => {
     const preventWindowFileDrop = (event: DragEvent): void => {
       if (!shouldHandleFileDrop(event.dataTransfer)) {
@@ -900,13 +1236,32 @@ function App(): React.JSX.Element {
               <div className="tab-action-menu" id="ssh-menu" role="menu">
                 <button
                   className="tab-action-menu-item"
-                  onClick={() => setIsSshMenuOpen(false)}
+                  onClick={handleOpenSshConfigWindow}
                   role="menuitem"
                   type="button"
                 >
                   <HardDrive aria-hidden="true" className="tab-action-menu-icon" />
                   Add SSH Server
                 </button>
+                {sshServers.length > 0 ? (
+                  <>
+                    <div aria-hidden="true" className="tab-action-menu-divider" />
+                    {sshServers.map((server) => (
+                      <button
+                        className="tab-action-menu-saved"
+                        key={server.id}
+                        onClick={() => handleConnectToSshServer(server)}
+                        role="menuitem"
+                        type="button"
+                      >
+                        <span className="tab-action-menu-saved-label">{server.name}</span>
+                        <span className="tab-action-menu-saved-meta">
+                          {formatSshTarget(server)}
+                        </span>
+                      </button>
+                    ))}
+                  </>
+                ) : null}
               </div>
             ) : null}
           </div>
@@ -939,6 +1294,16 @@ function App(): React.JSX.Element {
       </section>
     </main>
   )
+}
+
+function App(): React.JSX.Element {
+  const windowMode = new URLSearchParams(window.location.search).get('window')
+
+  if (windowMode === sshConfigWindowMode) {
+    return <SshConfigWindow />
+  }
+
+  return <TerminalApp />
 }
 
 export default App

@@ -1,4 +1,5 @@
 import { ElectronAPI } from '@electron-toolkit/preload'
+import type { SshApi } from '../shared/ssh'
 import type { TerminalApi } from '../shared/terminal'
 
 interface WebUtilsApi {
@@ -9,6 +10,7 @@ declare global {
   interface Window {
     electron: ElectronAPI
     api: {
+      ssh: SshApi
       terminal: TerminalApi
       webUtils: WebUtilsApi
     }

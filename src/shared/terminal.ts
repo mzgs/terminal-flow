@@ -1,3 +1,11 @@
+export interface TerminalCreateOptions {
+  args?: string[]
+  command?: string
+  cwd?: string
+  title?: string
+  trackCwd?: boolean
+}
+
 export interface TerminalCreateResult {
   terminalId: number
   title: string
@@ -21,7 +29,7 @@ export interface TerminalCwdEvent {
 }
 
 export interface TerminalApi {
-  create: () => Promise<TerminalCreateResult>
+  create: (options?: TerminalCreateOptions) => Promise<TerminalCreateResult>
   write: (terminalId: number, data: string) => void
   resize: (terminalId: number, cols: number, rows: number) => void
   kill: (terminalId: number) => void

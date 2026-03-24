@@ -328,6 +328,42 @@ body {
   outline: none;
 }
 
+.tab-action-menu-divider {
+  height: 1px;
+  margin: 6px 2px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.tab-action-menu-saved {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.tab-action-menu-saved-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #f5fbff;
+}
+
+.tab-action-menu-saved-meta {
+  font-size: 11px;
+  color: rgba(181, 198, 220, 0.72);
+}
+
+.tab-action-menu-saved:hover,
+.tab-action-menu-saved:focus-visible {
+  background: rgba(255, 255, 255, 0.08);
+  outline: none;
+}
+
 .terminal-workspace {
   position: relative;
   min-height: 0;
@@ -367,4 +403,224 @@ body {
 .terminal-screen .xterm-viewport::-webkit-scrollbar {
   width: 0;
   height: 0;
+}
+
+.ssh-config-window {
+  width: 100%;
+  height: 100%;
+  padding: 28px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  background:
+    radial-gradient(circle at top left, rgba(119, 215, 255, 0.18), transparent 34%),
+    radial-gradient(circle at bottom right, rgba(123, 242, 176, 0.12), transparent 28%),
+    linear-gradient(180deg, #06101a 0%, #03070c 100%);
+}
+
+.ssh-config-card {
+  display: grid;
+  gap: 22px;
+  max-width: 100%;
+  margin: 0 auto;
+  padding: 24px;
+  border: 1px solid rgba(119, 215, 255, 0.14);
+  border-radius: 22px;
+  background: rgba(8, 14, 23, 0.9);
+  box-shadow: 0 28px 60px rgba(0, 0, 0, 0.4);
+}
+
+.ssh-config-header {
+  display: grid;
+  gap: 8px;
+}
+
+.ssh-config-eyebrow {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-accent);
+}
+
+.ssh-config-title {
+  font-size: 28px;
+  line-height: 1.1;
+  letter-spacing: -0.03em;
+}
+
+.ssh-config-copy {
+  font-size: 14px;
+  color: var(--color-text-muted);
+}
+
+.ssh-config-form {
+  display: grid;
+  gap: 16px;
+}
+
+.ssh-config-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 120px;
+  gap: 14px;
+}
+
+.ssh-field {
+  display: grid;
+  gap: 7px;
+}
+
+.ssh-field-note {
+  padding: 12px 14px;
+  border: 1px solid rgba(119, 215, 255, 0.12);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.ssh-field-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #d9e6f8;
+}
+
+.ssh-field-help {
+  font-size: 13px;
+  color: rgba(217, 230, 248, 0.74);
+}
+
+.ssh-field-input {
+  width: 100%;
+  min-width: 0;
+  padding: 11px 13px;
+  border: 1px solid rgba(119, 215, 255, 0.14);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--color-text);
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease;
+}
+
+.ssh-field-input::placeholder {
+  color: rgba(148, 168, 195, 0.72);
+}
+
+.ssh-field-input:focus {
+  outline: none;
+  border-color: rgba(119, 215, 255, 0.42);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.ssh-field-textarea {
+  resize: vertical;
+  min-height: 104px;
+}
+
+.ssh-auth-options {
+  display: flex;
+  gap: 10px;
+}
+
+.ssh-auth-option {
+  flex: 1 1 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(119, 215, 255, 0.12);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  color: rgba(217, 230, 248, 0.82);
+  cursor: pointer;
+}
+
+.ssh-auth-option.is-active {
+  border-color: rgba(119, 215, 255, 0.34);
+  background: rgba(119, 215, 255, 0.14);
+  color: #f5fbff;
+}
+
+.ssh-auth-option:focus-visible {
+  outline: 2px solid rgba(119, 215, 255, 0.28);
+  outline-offset: 2px;
+}
+
+.ssh-config-preview {
+  display: grid;
+  gap: 3px;
+  padding: 12px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.ssh-config-preview-label {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(148, 168, 195, 0.82);
+}
+
+.ssh-config-error {
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 141, 137, 0.28);
+  border-radius: 12px;
+  background: rgba(255, 141, 137, 0.08);
+  color: #ffc5c2;
+  font-size: 13px;
+}
+
+.ssh-config-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.ssh-config-primary,
+.ssh-config-secondary {
+  min-width: 120px;
+  padding: 11px 16px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+
+.ssh-config-primary {
+  background: linear-gradient(135deg, #77d7ff 0%, #7bf2b0 100%);
+  color: #041019;
+  font-weight: 700;
+}
+
+.ssh-config-primary:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.ssh-config-secondary {
+  border-color: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--color-text);
+}
+
+@media (max-width: 640px) {
+  .ssh-config-window {
+    padding: 16px;
+  }
+
+  .ssh-config-card {
+    padding: 18px;
+    border-radius: 18px;
+  }
+
+  .ssh-config-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ssh-auth-options,
+  .ssh-config-actions {
+    flex-direction: column;
+  }
+
+  .ssh-config-primary,
+  .ssh-config-secondary {
+    width: 100%;
+  }
 }
