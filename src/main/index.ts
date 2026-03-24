@@ -38,8 +38,6 @@ const terminals = new Map<number, TerminalSession>()
 const ownersWithCleanup = new Set<number>()
 let nextTerminalId = 1
 let sshServers: SshServerConfig[] = []
-let mainWindow: BrowserWindow | null = null
-let sshConfigWindow: BrowserWindow | null = null
 const sshServersStoreFileName = 'ssh-servers.json'
 
 function ensureNodePtyHelpersExecutable(): void {
@@ -528,20 +526,12 @@ function addSshServer(config: SshServerConfig): void {
   sshServers = nextSshServers
 }
 
-function loadRendererWindow(window: BrowserWindow, windowMode?: string): Promise<void> {
+function loadRendererWindow(window: BrowserWindow): Promise<void> {
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
-    const rendererUrl = new URL(process.env['ELECTRON_RENDERER_URL'])
-
-    if (windowMode) {
-      rendererUrl.searchParams.set('window', windowMode)
-    }
-
-    return window.loadURL(rendererUrl.toString())
+    return window.loadURL(process.env['ELECTRON_RENDERER_URL'])
   }
 
-  return window.loadFile(join(__dirname, '../renderer/index.html'), {
-    query: windowMode ? { window: windowMode } : undefined
-  })
+  return window.loadFile(join(__dirname, '../renderer/index.html'))
 }
 
 function createMainWindow(): BrowserWindow {
@@ -571,64 +561,14 @@ function createMainWindow(): BrowserWindow {
     nextMainWindow.show()
   })
 
-  nextMainWindow.on('closed', () => {
-    mainWindow = null
-  })
-
   nextMainWindow.webContents.setWindowOpenHandler((details) => {
     shell.openExternal(details.url)
     return { action: 'deny' }
   })
 
   void loadRendererWindow(nextMainWindow)
-  mainWindow = nextMainWindow
 
   return nextMainWindow
-}
-
-function openSshConfigWindow(parentWindow?: BrowserWindow | null): void {
-  if (sshConfigWindow && !sshConfigWindow.isDestroyed()) {
-    sshConfigWindow.focus()
-    return
-  }
-
-  const ownerWindow = parentWindow && !parentWindow.isDestroyed() ? parentWindow : mainWindow
-  const nextSshConfigWindow = new BrowserWindow({
-    title: 'Add SSH Server',
-    width: 540,
-    height: 700,
-    minWidth: 540,
-    minHeight: 700,
-    resizable: false,
-    minimizable: false,
-    maximizable: false,
-    show: false,
-    autoHideMenuBar: true,
-    backgroundColor: '#08111b',
-    parent: ownerWindow ?? undefined,
-    modal: process.platform !== 'linux' && Boolean(ownerWindow),
-    ...(process.platform === 'linux' ? { icon } : {}),
-    webPreferences: {
-      preload: join(__dirname, '../preload/index.js'),
-      sandbox: false
-    }
-  })
-
-  nextSshConfigWindow.on('ready-to-show', () => {
-    nextSshConfigWindow.show()
-  })
-
-  nextSshConfigWindow.on('closed', () => {
-    sshConfigWindow = null
-  })
-
-  nextSshConfigWindow.webContents.setWindowOpenHandler((details) => {
-    shell.openExternal(details.url)
-    return { action: 'deny' }
-  })
-
-  void loadRendererWindow(nextSshConfigWindow, 'ssh-config')
-  sshConfigWindow = nextSshConfigWindow
 }
 
 function normalizeSshConfigInput(config: SshServerConfigInput): SshServerConfigInput {
@@ -643,21 +583,17 @@ function normalizeSshConfigInput(config: SshServerConfigInput): SshServerConfigI
   }
 }
 
-function submitSshConfig(sourceWindow: BrowserWindow, payload: SshServerConfigInput): void {
+function submitSshConfig(webContents: WebContents, payload: SshServerConfigInput): void {
   const config: SshServerConfig = {
     id: randomUUID(),
     ...normalizeSshConfigInput(payload)
   }
-  const parentWindow = sourceWindow.getParentWindow()
-  const targetWindow = parentWindow && !parentWindow.isDestroyed() ? parentWindow : mainWindow
 
   addSshServer(config)
 
-  if (targetWindow && !targetWindow.isDestroyed()) {
-    targetWindow.webContents.send('ssh:config-added', config)
+  if (!webContents.isDestroyed()) {
+    webContents.send('ssh:config-added', config)
   }
-
-  sourceWindow.close()
 }
 
 // This method will be called when Electron has finished
@@ -694,22 +630,10 @@ app.whenReady().then(() => {
   ipcMain.on('terminal:kill', (_event, terminalId: number) => {
     destroyTerminal(terminalId)
   })
-  ipcMain.handle('ssh:open-config-window', (event) => {
-    openSshConfigWindow(BrowserWindow.fromWebContents(event.sender))
-  })
   ipcMain.handle('ssh:list-configs', () => listSshServers())
-  ipcMain.handle('ssh:save-config', (event, payload: SshServerConfigInput) => {
-    const sourceWindow = BrowserWindow.fromWebContents(event.sender)
-
-    if (!sourceWindow) {
-      return
-    }
-
-    submitSshConfig(sourceWindow, payload)
-  })
-  ipcMain.handle('ssh:close-config-window', (event) => {
-    BrowserWindow.fromWebContents(event.sender)?.close()
-  })
+  ipcMain.handle('ssh:save-config', (event, payload: SshServerConfigInput) =>
+    submitSshConfig(event.sender, payload)
+  )
 
   createMainWindow()
 

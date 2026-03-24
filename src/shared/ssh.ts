@@ -15,9 +15,7 @@ export interface SshServerConfig extends SshServerConfigInput {
 }
 
 export interface SshApi {
-  closeConfigWindow: () => Promise<void>
   listConfigs: () => Promise<SshServerConfig[]>
   onConfigAdded: (callback: (config: SshServerConfig) => void) => () => void
-  openConfigWindow: () => Promise<void>
   saveConfig: (config: SshServerConfigInput) => Promise<void>
 }

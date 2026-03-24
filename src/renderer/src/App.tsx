@@ -3,6 +3,7 @@ import { FitAddon } from '@xterm/addon-fit'
 import { Terminal } from '@xterm/xterm'
 import { HardDrive, Plus, Server, X } from 'lucide-react'
 import { Reorder, useDragControls } from 'motion/react'
+import Modal from 'react-modal'
 import '@xterm/xterm/css/xterm.css'
 import type { SshAuthMethod, SshServerConfig, SshServerConfigInput } from '../../shared/ssh'
 import type { TerminalCreateOptions } from '../../shared/terminal'
@@ -69,8 +70,6 @@ const terminalOptions = {
   }
 } satisfies ConstructorParameters<typeof Terminal>[0]
 
-const sshConfigWindowMode = 'ssh-config'
-
 const defaultSshConfigInput: SshServerConfigInput = {
   authMethod: 'privateKey',
   description: '',
@@ -78,7 +77,7 @@ const defaultSshConfigInput: SshServerConfigInput = {
   name: '',
   password: '',
   port: 22,
-  username: ''
+  username: 'root'
 }
 
 function usesWindowsShellQuoting(): boolean {
@@ -267,26 +266,14 @@ function upsertSshServers(
   return Array.from(configsById.values())
 }
 
-function SshConfigWindow(): React.JSX.Element {
+interface SshConfigDialogProps {
+  onClose: () => void
+}
+
+function SshConfigDialog({ onClose }: SshConfigDialogProps): React.JSX.Element {
   const [formState, setFormState] = useState<SshServerConfigInput>(defaultSshConfigInput)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [isSaving, setIsSaving] = useState(false)
-
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent): void => {
-      if (event.key !== 'Escape') {
-        return
-      }
-
-      void window.api.ssh.closeConfigWindow()
-    }
-
-    window.addEventListener('keydown', handleKeyDown)
-
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown)
-    }
-  }, [])
 
   const updateField = useCallback(function updateField<TField extends keyof SshServerConfigInput>(
     field: TField,
@@ -313,8 +300,8 @@ function SshConfigWindow(): React.JSX.Element {
       return
     }
 
-    void window.api.ssh.closeConfigWindow()
-  }, [isSaving])
+    onClose()
+  }, [isSaving, onClose])
 
   const handleSubmit = useCallback(
     async (event: React.FormEvent<HTMLFormElement>): Promise<void> => {
@@ -343,138 +330,159 @@ function SshConfigWindow(): React.JSX.Element {
 
       try {
         await window.api.ssh.saveConfig(normalizedFormState)
+        onClose()
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
         setErrorMessage(message || 'Unable to save this SSH server.')
         setIsSaving(false)
       }
     },
-    [formState]
+    [formState, onClose]
   )
 
   return (
-    <main className="ssh-config-window">
-      <section className="ssh-config-card">
-        <div className="ssh-config-header">
+    <Modal
+      appElement={document.getElementById('root') ?? undefined}
+      aria={{
+        labelledby: 'ssh-config-title'
+      }}
+      bodyOpenClassName="ssh-config-modal-open"
+      className="ssh-config-card ssh-config-dialog"
+      contentLabel="Add SSH server config"
+      isOpen
+      onRequestClose={handleCancel}
+      overlayClassName="ssh-config-dialog-shell"
+      shouldCloseOnEsc={!isSaving}
+      shouldCloseOnOverlayClick={!isSaving}
+    >
+      <div className="ssh-config-header">
+        <div className="ssh-config-header-main">
           <span className="ssh-config-eyebrow">SSH Server</span>
-          <h1 className="ssh-config-title">Add SSH server config</h1>
+          <h2 className="ssh-config-title" id="ssh-config-title">
+            Add SSH server config
+          </h2>
           <p className="ssh-config-copy">
             Save a host definition in the main window menu for this session.
           </p>
         </div>
-        <form className="ssh-config-form" onSubmit={handleSubmit}>
+        <button
+          aria-label="Close SSH server dialog"
+          className="ssh-config-dismiss"
+          disabled={isSaving}
+          onClick={handleCancel}
+          type="button"
+        >
+          <X aria-hidden="true" className="ssh-config-dismiss-icon" />
+        </button>
+      </div>
+      <form className="ssh-config-form" onSubmit={handleSubmit}>
+        <label className="ssh-field">
+          <span className="ssh-field-label">Connection name</span>
+          <input
+            autoFocus
+            className="ssh-field-input"
+            onChange={(event) => updateField('name', event.target.value)}
+            placeholder="Production API"
+            type="text"
+            value={formState.name}
+          />
+        </label>
+        <div className="ssh-config-grid">
           <label className="ssh-field">
-            <span className="ssh-field-label">Connection name</span>
-            <input
-              autoFocus
-              className="ssh-field-input"
-              onChange={(event) => updateField('name', event.target.value)}
-              placeholder="Production API"
-              type="text"
-              value={formState.name}
-            />
-          </label>
-          <div className="ssh-config-grid">
-            <label className="ssh-field">
-              <span className="ssh-field-label">Host</span>
-              <input
-                className="ssh-field-input"
-                onChange={(event) => updateField('host', event.target.value)}
-                placeholder="server.example.com"
-                type="text"
-                value={formState.host}
-              />
-            </label>
-            <label className="ssh-field">
-              <span className="ssh-field-label">Port</span>
-              <input
-                className="ssh-field-input"
-                min={1}
-                onChange={(event) => updateField('port', Number(event.target.value) || 22)}
-                placeholder="22"
-                type="number"
-                value={formState.port}
-              />
-            </label>
-          </div>
-          <label className="ssh-field">
-            <span className="ssh-field-label">Username</span>
+            <span className="ssh-field-label">Host</span>
             <input
               className="ssh-field-input"
-              onChange={(event) => updateField('username', event.target.value)}
-              placeholder="ubuntu"
+              onChange={(event) => updateField('host', event.target.value)}
+              placeholder="server.example.com"
               type="text"
-              value={formState.username}
+              value={formState.host}
             />
           </label>
-          <div className="ssh-field">
-            <span className="ssh-field-label">Authentication</span>
-            <div className="ssh-auth-options" role="radiogroup">
-              <button
-                aria-checked={formState.authMethod === 'privateKey'}
-                className={`ssh-auth-option${formState.authMethod === 'privateKey' ? ' is-active' : ''}`}
-                onClick={() => updateAuthMethod('privateKey')}
-                role="radio"
-                type="button"
-              >
-                Private key
-              </button>
-              <button
-                aria-checked={formState.authMethod === 'password'}
-                className={`ssh-auth-option${formState.authMethod === 'password' ? ' is-active' : ''}`}
-                onClick={() => updateAuthMethod('password')}
-                role="radio"
-                type="button"
-              >
-                Password
-              </button>
-            </div>
-          </div>
-          {formState.authMethod === 'privateKey' ? (
-            <div className="ssh-field ssh-field-note" role="note">
-              <span className="ssh-field-label">Private key</span>
-              <p className="ssh-field-help">
-                The terminal will use your existing SSH keys or SSH agent automatically.
-              </p>
-            </div>
-          ) : (
-            <label className="ssh-field">
-              <span className="ssh-field-label">Password</span>
-              <input
-                className="ssh-field-input"
-                onChange={(event) => updateField('password', event.target.value)}
-                placeholder="Enter the account password"
-                type="password"
-                value={formState.password}
-              />
-            </label>
-          )}
           <label className="ssh-field">
-            <span className="ssh-field-label">Description</span>
-            <textarea
-              className="ssh-field-input ssh-field-textarea"
-              onChange={(event) => updateField('description', event.target.value)}
-              placeholder="Optional note for teammates or environment details"
-              rows={4}
-              value={formState.description}
+            <span className="ssh-field-label">Port</span>
+            <input
+              className="ssh-field-input"
+              min={1}
+              onChange={(event) => updateField('port', Number(event.target.value) || 22)}
+              placeholder="22"
+              type="number"
+              value={formState.port}
             />
           </label>
-          <div className="ssh-config-preview">
-            <span className="ssh-config-preview-label">Target</span>
-            <strong>{formatSshTarget(formState)}</strong>
-          </div>
-          {errorMessage ? <p className="ssh-config-error">{errorMessage}</p> : null}
-          <div className="ssh-config-actions">
-            <button className="ssh-config-secondary" onClick={handleCancel} type="button">
-              Cancel
+        </div>
+        <label className="ssh-field">
+          <span className="ssh-field-label">Username</span>
+          <input
+            className="ssh-field-input"
+            onChange={(event) => updateField('username', event.target.value)}
+            placeholder="ubuntu"
+            type="text"
+            value={formState.username}
+          />
+        </label>
+        <div className="ssh-field">
+          <span className="ssh-field-label">Authentication</span>
+          <div className="ssh-auth-options" role="radiogroup">
+            <button
+              aria-checked={formState.authMethod === 'privateKey'}
+              className={`ssh-auth-option${formState.authMethod === 'privateKey' ? ' is-active' : ''}`}
+              onClick={() => updateAuthMethod('privateKey')}
+              role="radio"
+              type="button"
+            >
+              Private key
             </button>
-            <button className="ssh-config-primary" disabled={isSaving} type="submit">
-              {isSaving ? 'Saving...' : 'Save Server'}
+            <button
+              aria-checked={formState.authMethod === 'password'}
+              className={`ssh-auth-option${formState.authMethod === 'password' ? ' is-active' : ''}`}
+              onClick={() => updateAuthMethod('password')}
+              role="radio"
+              type="button"
+            >
+              Password
             </button>
           </div>
-        </form>
-      </section>
-    </main>
+        </div>
+        {formState.authMethod === 'privateKey' ? (
+          <div className="ssh-field ssh-field-note" role="note">
+            <span className="ssh-field-label">Private key</span>
+            <p className="ssh-field-help">
+              The terminal will use your existing SSH keys or SSH agent automatically.
+            </p>
+          </div>
+        ) : (
+          <label className="ssh-field">
+            <span className="ssh-field-label">Password</span>
+            <input
+              className="ssh-field-input"
+              onChange={(event) => updateField('password', event.target.value)}
+              placeholder="Enter the account password"
+              type="password"
+              value={formState.password}
+            />
+          </label>
+        )}
+        <label className="ssh-field">
+          <span className="ssh-field-label">Description</span>
+          <textarea
+            className="ssh-field-input ssh-field-textarea"
+            onChange={(event) => updateField('description', event.target.value)}
+            placeholder="Optional note for teammates or environment details"
+            rows={4}
+            value={formState.description}
+          />
+        </label>
+        {errorMessage ? <p className="ssh-config-error">{errorMessage}</p> : null}
+        <div className="ssh-config-actions">
+          <button className="ssh-config-secondary" onClick={handleCancel} type="button">
+            Cancel
+          </button>
+          <button className="ssh-config-primary" disabled={isSaving} type="submit">
+            {isSaving ? 'Saving...' : 'Save Server'}
+          </button>
+        </div>
+      </form>
+    </Modal>
   )
 }
 
@@ -482,6 +490,7 @@ function TerminalApp(): React.JSX.Element {
   const [tabs, setTabs] = useState<TabRecord[]>([])
   const [activeTabId, setActiveTabId] = useState<string | null>(null)
   const [isSshMenuOpen, setIsSshMenuOpen] = useState(false)
+  const [isSshConfigDialogOpen, setIsSshConfigDialogOpen] = useState(false)
   const [sshServers, setSshServers] = useState<SshServerConfig[]>([])
   const nextTabIdRef = useRef(1)
   const workspaceRef = useRef<HTMLDivElement>(null)
@@ -1104,9 +1113,13 @@ function TerminalApp(): React.JSX.Element {
     [writeDroppedPathsToActiveTerminal]
   )
 
-  const handleOpenSshConfigWindow = useCallback((): void => {
+  const handleOpenSshConfigDialog = useCallback((): void => {
     setIsSshMenuOpen(false)
-    void window.api.ssh.openConfigWindow()
+    setIsSshConfigDialogOpen(true)
+  }, [])
+
+  const handleCloseSshConfigDialog = useCallback((): void => {
+    setIsSshConfigDialogOpen(false)
   }, [])
 
   const handleConnectToSshServer = useCallback(
@@ -1236,7 +1249,7 @@ function TerminalApp(): React.JSX.Element {
               <div className="tab-action-menu" id="ssh-menu" role="menu">
                 <button
                   className="tab-action-menu-item"
-                  onClick={handleOpenSshConfigWindow}
+                  onClick={handleOpenSshConfigDialog}
                   role="menuitem"
                   type="button"
                 >
@@ -1292,16 +1305,19 @@ function TerminalApp(): React.JSX.Element {
           />
         ))}
       </section>
+      {isSshConfigDialogOpen ? <SshConfigDialog onClose={handleCloseSshConfigDialog} /> : null}
     </main>
   )
 }
 
 function App(): React.JSX.Element {
-  const windowMode = new URLSearchParams(window.location.search).get('window')
+  useEffect(() => {
+    const appElement = document.getElementById('root')
 
-  if (windowMode === sshConfigWindowMode) {
-    return <SshConfigWindow />
-  }
+    if (appElement) {
+      Modal.setAppElement(appElement)
+    }
+  }, [])
 
   return <TerminalApp />
 }

@@ -7,16 +7,22 @@ body {
     linear-gradient(180deg, #03070c 0%, #000 100%);
 }
 
+.ssh-config-modal-open {
+  overflow: hidden;
+}
+
 #root {
   width: 100vw;
   height: 100vh;
 }
 
 .app-shell {
+  position: relative;
   width: 100%;
   height: 100%;
   display: grid;
   grid-template-rows: 52px 1fr;
+  overflow: hidden;
   background: linear-gradient(180deg, rgba(10, 16, 25, 0.96) 0%, rgba(0, 0, 0, 0.96) 100%);
 }
 
@@ -418,18 +424,29 @@ body {
   height: 0;
 }
 
-.ssh-config-window {
-  width: 100%;
-  height: 100%;
+.ssh-config-dialog-shell {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
   padding: 28px;
+  overscroll-behavior: contain;
+  backdrop-filter: blur(16px);
   overflow-x: hidden;
   overflow-y: auto;
-  overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
   background:
-    radial-gradient(circle at top left, rgba(119, 215, 255, 0.18), transparent 34%),
-    radial-gradient(circle at bottom right, rgba(123, 242, 176, 0.12), transparent 28%),
-    linear-gradient(180deg, #06101a 0%, #03070c 100%);
+    radial-gradient(circle at top left, rgba(119, 215, 255, 0.22), transparent 36%),
+    radial-gradient(circle at bottom right, rgba(123, 242, 176, 0.16), transparent 30%),
+    rgba(3, 7, 12, 0.8);
+}
+
+.ssh-config-dialog {
+  width: min(560px, 100%);
+  max-height: calc(100vh - 56px);
+  overflow-y: auto;
+  outline: none;
 }
 
 .ssh-config-card {
@@ -445,8 +462,16 @@ body {
 }
 
 .ssh-config-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.ssh-config-header-main {
   display: grid;
   gap: 8px;
+  min-width: 0;
 }
 
 .ssh-config-eyebrow {
@@ -466,6 +491,43 @@ body {
 .ssh-config-copy {
   font-size: 14px;
   color: var(--color-text-muted);
+}
+
+.ssh-config-dismiss {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(217, 230, 248, 0.82);
+  cursor: pointer;
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease,
+    color 160ms ease;
+}
+
+.ssh-config-dismiss:hover,
+.ssh-config-dismiss:focus-visible {
+  border-color: rgba(119, 215, 255, 0.24);
+  background: rgba(255, 255, 255, 0.08);
+  color: #f5fbff;
+  outline: none;
+}
+
+.ssh-config-dismiss:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+
+.ssh-config-dismiss-icon {
+  width: 14px;
+  height: 14px;
+  stroke-width: 2.2;
 }
 
 .ssh-config-form {
@@ -505,11 +567,13 @@ body {
 .ssh-field-input {
   width: 100%;
   min-width: 0;
-  padding: 11px 13px;
+  padding: 8px 11px;
   border: 1px solid rgba(119, 215, 255, 0.14);
-  border-radius: 12px;
+  border-radius: 10px;
   background: rgba(255, 255, 255, 0.04);
   color: var(--color-text);
+  font-size: 13px;
+  line-height: 1.35;
   transition:
     border-color 160ms ease,
     background-color 160ms ease;
@@ -527,7 +591,7 @@ body {
 
 .ssh-field-textarea {
   resize: vertical;
-  min-height: 104px;
+  min-height: 88px;
 }
 
 .ssh-auth-options {
@@ -537,12 +601,13 @@ body {
 
 .ssh-auth-option {
   flex: 1 1 0;
-  padding: 10px 12px;
+  padding: 8px 10px;
   border: 1px solid rgba(119, 215, 255, 0.12);
-  border-radius: 12px;
+  border-radius: 10px;
   background: rgba(255, 255, 255, 0.03);
   color: rgba(217, 230, 248, 0.82);
   cursor: pointer;
+  font-size: 13px;
 }
 
 .ssh-auth-option.is-active {
@@ -554,22 +619,6 @@ body {
 .ssh-auth-option:focus-visible {
   outline: 2px solid rgba(119, 215, 255, 0.28);
   outline-offset: 2px;
-}
-
-.ssh-config-preview {
-  display: grid;
-  gap: 3px;
-  padding: 12px 14px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.03);
-}
-
-.ssh-config-preview-label {
-  font-size: 11px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: rgba(148, 168, 195, 0.82);
 }
 
 .ssh-config-error {
@@ -584,16 +633,17 @@ body {
 .ssh-config-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 10px;
+  gap: 8px;
 }
 
 .ssh-config-primary,
 .ssh-config-secondary {
-  min-width: 120px;
-  padding: 11px 16px;
+  min-width: 96px;
+  padding: 8px 12px;
   border-radius: 999px;
   border: 1px solid transparent;
   cursor: pointer;
+  font-size: 12px;
 }
 
 .ssh-config-primary {
@@ -614,13 +664,17 @@ body {
 }
 
 @media (max-width: 640px) {
-  .ssh-config-window {
+  .ssh-config-dialog-shell {
     padding: 16px;
   }
 
   .ssh-config-card {
     padding: 18px;
     border-radius: 18px;
+  }
+
+  .ssh-config-header {
+    gap: 12px;
   }
 
   .ssh-config-grid {

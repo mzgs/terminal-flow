@@ -53,9 +53,7 @@ const terminal: TerminalApi = {
 
 const ssh: SshApi = {
   listConfigs: () => ipcRenderer.invoke('ssh:list-configs'),
-  openConfigWindow: () => ipcRenderer.invoke('ssh:open-config-window'),
   saveConfig: (config) => ipcRenderer.invoke('ssh:save-config', config),
-  closeConfigWindow: () => ipcRenderer.invoke('ssh:close-config-window'),
   onConfigAdded: (callback) => {
     const listener = (_event: Electron.IpcRendererEvent, payload: SshServerConfig): void => {
       callback(payload)
