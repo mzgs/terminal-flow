@@ -1,12 +1,18 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
-import type { TerminalApi, TerminalDataEvent, TerminalExitEvent } from '../shared/terminal'
+import type {
+  TerminalApi,
+  TerminalCwdEvent,
+  TerminalDataEvent,
+  TerminalExitEvent
+} from '../shared/terminal'
 
 // Custom APIs for renderer
 const terminal: TerminalApi = {
   create: () => ipcRenderer.invoke('terminal:create'),
   write: (terminalId, data) => ipcRenderer.send('terminal:write', { terminalId, data }),
-  resize: (terminalId, cols, rows) => ipcRenderer.send('terminal:resize', { terminalId, cols, rows }),
+  resize: (terminalId, cols, rows) =>
+    ipcRenderer.send('terminal:resize', { terminalId, cols, rows }),
   kill: (terminalId) => ipcRenderer.send('terminal:kill', terminalId),
   onData: (callback) => {
     const listener = (_event: Electron.IpcRendererEvent, payload: TerminalDataEvent): void => {
@@ -17,6 +23,17 @@ const terminal: TerminalApi = {
 
     return () => {
       ipcRenderer.off('terminal:data', listener)
+    }
+  },
+  onCwd: (callback) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: TerminalCwdEvent): void => {
+      callback(payload)
+    }
+
+    ipcRenderer.on('terminal:cwd', listener)
+
+    return () => {
+      ipcRenderer.off('terminal:cwd', listener)
     }
   },
   onExit: (callback) => {

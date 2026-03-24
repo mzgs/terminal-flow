@@ -5,8 +5,8 @@ Desktop terminal application built with Electron, React, `xterm.js`, and `node-p
 ## Overview
 
 This project wraps the user shell in a desktop window and renders it with `xterm.js`.
-The Electron main process owns the PTY session, the preload layer exposes a small IPC
-API, and the React renderer handles terminal rendering, input, and resize syncing.
+The Electron main process owns the PTY sessions, the preload layer exposes a small IPC
+API, and the React renderer handles terminal rendering, tab management, input, and resize syncing.
 
 ## Stack
 
@@ -71,6 +71,9 @@ build/          Packaging assets such as icons and macOS entitlements
 ## Behavior Notes
 
 - The app starts the first available shell from the current environment.
+- Each tab owns its own PTY session, so commands continue running when you switch tabs.
+- Keyboard shortcuts are available for tabs: `Cmd/Ctrl+T` to open, `Cmd/Ctrl+W` to close,
+  `Cmd/Ctrl+1..9` to jump, and `Ctrl+Tab` or `Cmd/Ctrl+Shift+[` / `]` to cycle.
 - On macOS and Linux, the app attempts to ensure the `node-pty` `spawn-helper` is executable.
 - Terminal size is synchronized with the window using `@xterm/addon-fit` and a `ResizeObserver`.
 - When the window closes, the owned PTY session is cleaned up from the main process.

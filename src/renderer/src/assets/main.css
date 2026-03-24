@@ -2,7 +2,9 @@
 
 body {
   overflow: hidden;
-  background: #000;
+  background:
+    radial-gradient(circle at top, rgba(52, 127, 188, 0.18), transparent 38%),
+    linear-gradient(180deg, #03070c 0%, #000 100%);
 }
 
 #root {
@@ -14,43 +16,229 @@ body {
   width: 100%;
   height: 100%;
   display: grid;
-  grid-template-rows: 40px 1fr;
-  background: #000;
+  grid-template-rows: 52px 1fr;
+  background: linear-gradient(180deg, rgba(10, 16, 25, 0.96) 0%, rgba(0, 0, 0, 0.96) 100%);
 }
 
 .window-titlebar {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) 48px auto;
   align-items: center;
-  justify-content: center;
-  height: 40px;
-  padding: 0 16px;
-  background: #111;
-  border-bottom: 1px solid #1f1f1f;
-  color: #cfcfcf;
-  -webkit-app-region: drag;
+  gap: 12px;
+  padding: 0 14px 0 16px;
+  background: rgba(8, 12, 18, 0.92);
+  border-bottom: 1px solid rgba(119, 215, 255, 0.12);
+  color: #cfd9ea;
+  -webkit-app-region: no-drag;
   user-select: none;
+}
+
+.window-brand {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: max-content;
+  -webkit-app-region: drag;
 }
 
 .window-title {
   font-size: 13px;
-  font-weight: 500;
-  letter-spacing: 0.02em;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}
+
+.window-subtitle {
+  font-size: 11px;
+  color: rgba(148, 168, 195, 0.82);
 }
 
 .platform-macos .window-titlebar {
   padding-left: 88px;
 }
 
-.terminal-screen {
-  width: 100%;
+.tab-strip-shell {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.tab-strip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: max-content;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 6px 0;
+  scrollbar-width: none;
+  overscroll-behavior-x: contain;
+  -webkit-app-region: no-drag;
+  -webkit-overflow-scrolling: touch;
+}
+
+.window-drag-spacer {
+  width: 48px;
   height: 100%;
+  -webkit-app-region: drag;
+}
+
+.tab-strip::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+.tab-item {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.tab-button,
+.tab-action,
+.tab-close {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: inherit;
+  -webkit-app-region: no-drag;
+}
+
+.tab-button,
+.tab-action {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.tab-button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 160px;
+  max-width: 220px;
+  height: 34px;
+  padding: 0 34px 0 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.tab-item.is-active .tab-button {
+  border-color: rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.1);
+  color: #f5fbff;
+}
+
+.tab-copy {
+  display: grid;
+  min-width: 0;
+}
+
+.tab-label,
+.tab-meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tab-label {
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.tab-meta {
+  font-size: 10px;
+  color: rgba(181, 198, 220, 0.62);
+}
+
+.tab-item.is-active .tab-meta {
+  color: rgba(218, 232, 247, 0.8);
+}
+
+.tab-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  flex: 0 0 auto;
+}
+
+.tab-status-connecting {
+  background: #ffd479;
+}
+
+.tab-status-ready {
+  background: #7bf2b0;
+}
+
+.tab-status-closed {
+  background: #ff8d89;
+}
+
+.tab-close {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  margin-top: -10px;
+  padding: 0;
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+  color: rgba(214, 223, 236, 0.72);
+  font-size: 14px;
+  line-height: 1;
+}
+
+.tab-action {
+  width: 30px;
+  height: 30px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.tab-button:hover,
+.tab-action:hover,
+.tab-close:hover {
+  border-color: rgba(255, 255, 255, 0.14);
+  background-color: rgba(255, 255, 255, 0.08);
+}
+
+.tab-item.is-active .tab-close {
+  color: rgba(245, 251, 255, 0.82);
+}
+
+.tab-button:focus-visible,
+.tab-action:focus-visible,
+.tab-close:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.22);
+  outline-offset: 1px;
+}
+
+.terminal-workspace {
+  position: relative;
+  min-height: 0;
   background: #000;
+}
+
+.terminal-screen {
+  position: absolute;
+  inset: 0;
+  visibility: hidden;
+  pointer-events: none;
+  background: #000;
+}
+
+.terminal-screen.is-active {
+  visibility: visible;
+  pointer-events: auto;
 }
 
 .terminal-screen .xterm {
   width: 100%;
   height: 100%;
-  padding: 8px 10px;
+  padding: 10px 12px;
   background: #000;
 }
 

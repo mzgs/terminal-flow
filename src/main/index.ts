@@ -1,14 +1,18 @@
 import { app, shell, BrowserWindow, ipcMain, type WebContents } from 'electron'
+import { execFileSync } from 'node:child_process'
 import { accessSync, chmodSync, constants, existsSync, statSync } from 'node:fs'
-import { dirname, join } from 'path'
+import { basename, dirname, join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { spawn, type IPty } from 'node-pty'
 import icon from '../../resources/icon.png?asset'
 import type { TerminalCreateResult } from '../shared/terminal'
 
 interface TerminalSession {
+  cwdRefreshTimeout: NodeJS.Timeout | null
+  lastCwd: string | null
   ownerId: number
   process: IPty
+  shellName: string
 }
 
 const terminals = new Map<number, TerminalSession>()
@@ -35,7 +39,15 @@ function ensureNodePtyHelpersExecutable(): void {
   const packageRoot = dirname(packageJsonPath)
   const helperCandidates = [
     join(packageRoot, 'prebuilds', `${process.platform}-${process.arch}`, 'spawn-helper'),
-    join(process.resourcesPath, 'app.asar.unpacked', 'node_modules', 'node-pty', 'prebuilds', `${process.platform}-${process.arch}`, 'spawn-helper')
+    join(
+      process.resourcesPath,
+      'app.asar.unpacked',
+      'node_modules',
+      'node-pty',
+      'prebuilds',
+      `${process.platform}-${process.arch}`,
+      'spawn-helper'
+    )
   ]
 
   for (const helperPath of helperCandidates) {
@@ -89,7 +101,7 @@ function getShellCandidates(): string[] {
 }
 
 function getTerminalCwd(): string {
-  const candidates = [process.cwd(), app.getPath('home'), app.getAppPath(), '/']
+  const candidates = [app.getPath('home'), process.cwd(), app.getAppPath(), '/']
 
   for (const candidate of candidates) {
     if (candidate && isDirectory(candidate)) {
@@ -98,6 +110,130 @@ function getTerminalCwd(): string {
   }
 
   return '/'
+}
+
+function formatShellName(shellPath: string): string {
+  return basename(shellPath).replace(/\.exe$/i, '') || 'shell'
+}
+
+function formatTerminalTitle(cwd: string, shellName: string): string {
+  const homePath = app.getPath('home')
+  const normalizedCwd = cwd.replaceAll('\\', '/')
+  const normalizedHomePath = homePath.replaceAll('\\', '/')
+  let pathTitle = normalizedCwd || '~'
+
+  if (normalizedCwd === normalizedHomePath) {
+    pathTitle = '~'
+  } else if (normalizedCwd.startsWith(`${normalizedHomePath}/`)) {
+    pathTitle = `~${normalizedCwd.slice(normalizedHomePath.length)}`
+  }
+
+  return `${pathTitle} — ${shellName}`
+}
+
+function getProcessCwd(pid: number): string | null {
+  if (pid <= 0) {
+    return null
+  }
+
+  if (process.platform === 'linux') {
+    try {
+      return execFileSync('readlink', [`/proc/${pid}/cwd`], { encoding: 'utf8' }).trim() || null
+    } catch {
+      return null
+    }
+  }
+
+  if (process.platform === 'darwin') {
+    try {
+      const output = execFileSync('lsof', ['-a', '-p', String(pid), '-d', 'cwd', '-Fn'], {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore']
+      })
+      const cwdLine = output.split('\n').find((line) => line.startsWith('n') && line.length > 1)
+
+      return cwdLine ? cwdLine.slice(1) : null
+    } catch {
+      return null
+    }
+  }
+
+  return null
+}
+
+function sendTerminalCwd(webContents: WebContents, terminalId: number, cwd: string): void {
+  const session = terminals.get(terminalId)
+
+  if (!session) {
+    return
+  }
+
+  if (!webContents.isDestroyed()) {
+    webContents.send('terminal:cwd', {
+      terminalId,
+      cwd,
+      title: formatTerminalTitle(cwd, session.shellName)
+    })
+  }
+}
+
+function refreshTerminalCwd(
+  terminalId: number,
+  session: TerminalSession,
+  webContents: WebContents
+): void {
+  if (process.platform === 'win32') {
+    return
+  }
+
+  const nextCwd = getProcessCwd(session.process.pid)
+
+  if (!nextCwd || nextCwd === session.lastCwd) {
+    return
+  }
+
+  session.lastCwd = nextCwd
+  sendTerminalCwd(webContents, terminalId, nextCwd)
+}
+
+function queueTerminalCwdRefresh(
+  terminalId: number,
+  session: TerminalSession,
+  webContents: WebContents
+): void {
+  if (process.platform === 'win32') {
+    return
+  }
+
+  if (session.cwdRefreshTimeout) {
+    clearTimeout(session.cwdRefreshTimeout)
+  }
+
+  session.cwdRefreshTimeout = setTimeout(() => {
+    session.cwdRefreshTimeout = null
+    refreshTerminalCwd(terminalId, session, webContents)
+  }, 120)
+
+  session.cwdRefreshTimeout.unref()
+}
+
+function startTerminalCwdTracking(
+  terminalId: number,
+  session: TerminalSession,
+  webContents: WebContents,
+  initialCwd: string
+): void {
+  session.lastCwd = initialCwd
+  sendTerminalCwd(webContents, terminalId, initialCwd)
+}
+
+function stopTerminalCwdTracking(session: TerminalSession): void {
+  if (!session.cwdRefreshTimeout) {
+    return
+  }
+
+  clearTimeout(session.cwdRefreshTimeout)
+  session.cwdRefreshTimeout = null
 }
 
 function getTerminalEnv(cwd: string): Record<string, string> {
@@ -117,20 +253,22 @@ function getTerminalEnv(cwd: string): Record<string, string> {
   return env
 }
 
-function spawnTerminalProcess(): IPty {
-  const cwd = getTerminalCwd()
+function spawnTerminalProcess(cwd: string): { process: IPty; shellName: string } {
   const env = getTerminalEnv(cwd)
   const failures: string[] = []
 
   for (const shellPath of getShellCandidates()) {
     try {
-      return spawn(shellPath, [], {
-        name: 'xterm-256color',
-        cols: 100,
-        rows: 30,
-        cwd,
-        env
-      })
+      return {
+        process: spawn(shellPath, [], {
+          name: 'xterm-256color',
+          cols: 100,
+          rows: 30,
+          cwd,
+          env
+        }),
+        shellName: formatShellName(shellPath)
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       failures.push(`${shellPath}: ${message}`)
@@ -148,6 +286,7 @@ function destroyTerminal(terminalId: number): void {
   }
 
   terminals.delete(terminalId)
+  stopTerminalCwdTracking(session)
 
   try {
     session.process.kill()
@@ -179,20 +318,29 @@ function createTerminal(webContents: WebContents): TerminalCreateResult {
   registerOwnerCleanup(webContents)
 
   const terminalId = nextTerminalId++
-  const terminalProcess = spawnTerminalProcess()
-
-  terminals.set(terminalId, {
+  const cwd = getTerminalCwd()
+  const { process: terminalProcess, shellName } = spawnTerminalProcess(cwd)
+  const session: TerminalSession = {
+    cwdRefreshTimeout: null,
+    lastCwd: null,
     ownerId: webContents.id,
-    process: terminalProcess
-  })
+    process: terminalProcess,
+    shellName
+  }
+
+  terminals.set(terminalId, session)
+  startTerminalCwdTracking(terminalId, session, webContents, cwd)
 
   terminalProcess.onData((data) => {
     if (!webContents.isDestroyed()) {
       webContents.send('terminal:data', { terminalId, data })
     }
+
+    queueTerminalCwdRefresh(terminalId, session, webContents)
   })
 
   terminalProcess.onExit(({ exitCode, signal }) => {
+    stopTerminalCwdTracking(session)
     terminals.delete(terminalId)
 
     if (!webContents.isDestroyed()) {
@@ -200,7 +348,10 @@ function createTerminal(webContents: WebContents): TerminalCreateResult {
     }
   })
 
-  return { terminalId }
+  return {
+    terminalId,
+    title: formatTerminalTitle(cwd, shellName)
+  }
 }
 
 function createWindow(): void {
