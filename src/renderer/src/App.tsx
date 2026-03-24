@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { FitAddon } from '@xterm/addon-fit'
 import { Terminal } from '@xterm/xterm'
+import { Reorder, useDragControls } from 'motion/react'
 import '@xterm/xterm/css/xterm.css'
 
 type TabStatus = 'connecting' | 'ready' | 'closed'
@@ -74,6 +75,74 @@ function getTabStatusLabel(tab: TabRecord): string {
   }
 
   return ''
+}
+
+interface ReorderableTabProps {
+  closeTab: (tabId: string) => void
+  index: number
+  isActive: boolean
+  setActiveTabId: React.Dispatch<React.SetStateAction<string | null>>
+  tab: TabRecord
+}
+
+function ReorderableTab({
+  closeTab,
+  index,
+  isActive,
+  setActiveTabId,
+  tab
+}: ReorderableTabProps): React.JSX.Element {
+  const dragControls = useDragControls()
+  const tabStatusLabel = getTabStatusLabel(tab)
+
+  return (
+    <Reorder.Item
+      as="div"
+      className={`tab-item${isActive ? ' is-active' : ''}`}
+      dragControls={dragControls}
+      dragListener={false}
+      value={tab}
+      whileDrag={{
+        boxShadow: '0 16px 32px rgba(0, 0, 0, 0.38)',
+        scale: 1.02,
+        zIndex: 3
+      }}
+    >
+      <button
+        aria-controls={`panel-${tab.id}`}
+        aria-selected={isActive}
+        className="tab-button"
+        onClick={() => setActiveTabId(tab.id)}
+        onPointerDown={(event) => {
+          if (!event.isPrimary || (event.pointerType === 'mouse' && event.button !== 0)) {
+            return
+          }
+
+          dragControls.start(event)
+        }}
+        role="tab"
+        title={tab.title}
+        type="button"
+      >
+        <span className={`tab-status-dot tab-status-${tab.status}`} aria-hidden="true" />
+        <span className="tab-copy">
+          <span className="tab-label">{tab.title}</span>
+          {tabStatusLabel ? <span className="tab-meta">{tabStatusLabel}</span> : null}
+        </span>
+      </button>
+      <button
+        aria-label={`Close tab ${index + 1}`}
+        className="tab-close"
+        onClick={(event) => {
+          event.stopPropagation()
+          closeTab(tab.id)
+        }}
+        type="button"
+      >
+        ×
+      </button>
+    </Reorder.Item>
+  )
 }
 
 function App(): React.JSX.Element {
@@ -348,6 +417,16 @@ function App(): React.JSX.Element {
     [syncActiveTabLayout, updateTab]
   )
 
+  const handleTabsReorder = useCallback((nextOrder: TabRecord[]): void => {
+    setTabs((currentTabs) => {
+      const tabsById = new Map(currentTabs.map((tab) => [tab.id, tab]))
+
+      return nextOrder
+        .map((tab) => tabsById.get(tab.id))
+        .filter((tab): tab is TabRecord => tab !== undefined)
+    })
+  }, [])
+
   useEffect(() => {
     tabsRef.current = tabs
 
@@ -572,52 +651,33 @@ function App(): React.JSX.Element {
           </span>
         </div>
         <div className="tab-strip-shell">
-          <div
+          <Reorder.Group
+            as="div"
             aria-label="Terminal tabs"
+            axis="x"
             className="tab-strip"
+            layoutScroll
+            onReorder={handleTabsReorder}
             onWheel={handleTabStripWheel}
             ref={tabStripRef}
             role="tablist"
+            values={tabs}
           >
             {tabs.map((tab, index) => {
               const isActive = tab.id === activeTabId
-              const tabStatusLabel = getTabStatusLabel(tab)
 
               return (
-                <div className={`tab-item${isActive ? ' is-active' : ''}`} key={tab.id}>
-                  <button
-                    aria-controls={`panel-${tab.id}`}
-                    aria-selected={isActive}
-                    className="tab-button"
-                    onClick={() => setActiveTabId(tab.id)}
-                    role="tab"
-                    title={tab.title}
-                    type="button"
-                  >
-                    <span
-                      className={`tab-status-dot tab-status-${tab.status}`}
-                      aria-hidden="true"
-                    />
-                    <span className="tab-copy">
-                      <span className="tab-label">{tab.title}</span>
-                      {tabStatusLabel ? <span className="tab-meta">{tabStatusLabel}</span> : null}
-                    </span>
-                  </button>
-                  <button
-                    aria-label={`Close tab ${index + 1}`}
-                    className="tab-close"
-                    onClick={(event) => {
-                      event.stopPropagation()
-                      closeTab(tab.id)
-                    }}
-                    type="button"
-                  >
-                    ×
-                  </button>
-                </div>
+                <ReorderableTab
+                  closeTab={closeTab}
+                  index={index}
+                  isActive={isActive}
+                  key={tab.id}
+                  setActiveTabId={setActiveTabId}
+                  tab={tab}
+                />
               )
             })}
-          </div>
+          </Reorder.Group>
         </div>
         <div aria-hidden="true" className="window-drag-spacer" />
         <button

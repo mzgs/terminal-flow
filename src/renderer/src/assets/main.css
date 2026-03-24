@@ -91,7 +91,9 @@ body {
 
 .tab-item {
   position: relative;
+  display: flex;
   flex: 0 0 auto;
+  touch-action: pan-y;
 }
 
 .tab-button,
@@ -116,8 +118,12 @@ body {
   height: 34px;
   padding: 0 34px 0 10px;
   border-radius: 8px;
-  cursor: pointer;
+  cursor: grab;
   text-align: left;
+}
+
+.tab-item:active .tab-button {
+  cursor: grabbing;
 }
 
 .tab-item.is-active .tab-button {
