@@ -222,8 +222,12 @@ body {
   background: transparent;
   cursor: pointer;
   color: rgba(214, 223, 236, 0.72);
-  font-size: 14px;
-  line-height: 1;
+}
+
+.tab-close-icon {
+  width: 14px;
+  height: 14px;
+  stroke-width: 2.25;
 }
 
 .tab-action {
@@ -246,6 +250,7 @@ body {
 .tab-action-icon {
   width: 16px;
   height: 16px;
+  stroke-width: 2.25;
 }
 
 .tab-action-icon-image {

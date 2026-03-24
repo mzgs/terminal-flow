@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { FitAddon } from '@xterm/addon-fit'
 import { Terminal } from '@xterm/xterm'
+import { Plus, X } from 'lucide-react'
 import { Reorder, useDragControls } from 'motion/react'
 import '@xterm/xterm/css/xterm.css'
 import serverIcon from './assets/server.png'
@@ -200,34 +201,20 @@ function ReorderableTab({
         }}
         type="button"
       >
-        ×
+        <X aria-hidden="true" className="tab-close-icon" />
       </button>
     </Reorder.Item>
   )
 }
 
 function SshIcon(): React.JSX.Element {
-  return <img alt="" aria-hidden="true" className="tab-action-icon tab-action-icon-image" src={serverIcon} />
-}
-
-function PlusIcon(): React.JSX.Element {
   return (
-    <svg
+    <img
+      alt=""
       aria-hidden="true"
-      className="tab-action-icon lucide lucide-plus-icon lucide-plus"
-      fill="none"
-      height="24"
-      stroke="currentColor"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      strokeWidth="2"
-      viewBox="0 0 24 24"
-      width="24"
-      xmlns="http://www.w3.org/2000/svg"
-    >
-      <path d="M5 12h14" />
-      <path d="M12 5v14" />
-    </svg>
+      className="tab-action-icon tab-action-icon-image"
+      src={serverIcon}
+    />
   )
 }
 
@@ -870,7 +857,7 @@ function App(): React.JSX.Element {
             title="New tab"
             type="button"
           >
-            <PlusIcon />
+            <Plus aria-hidden="true" className="tab-action-icon" />
           </button>
           <span aria-hidden="true" className="tab-action tab-action-static" title="SSH">
             <SshIcon />
