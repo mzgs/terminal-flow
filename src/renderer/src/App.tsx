@@ -6,7 +6,7 @@ import { Reorder, useDragControls } from 'motion/react'
 import Modal from 'react-modal'
 import '@xterm/xterm/css/xterm.css'
 import type { SshAuthMethod, SshServerConfig, SshServerConfigInput } from '../../shared/ssh'
-import type { TerminalCreateOptions } from '../../shared/terminal'
+import type { TerminalCreateOptions, TerminalCreateResult } from '../../shared/terminal'
 
 type TabStatus = 'connecting' | 'ready' | 'closed'
 
@@ -29,6 +29,7 @@ interface TerminalRuntime {
 }
 
 interface CreateTabOptions {
+  createTerminal?: () => Promise<TerminalCreateResult>
   terminalCreateOptions?: TerminalCreateOptions
   title?: string
 }
@@ -234,23 +235,6 @@ function SshIcon(): React.JSX.Element {
 
 function formatSshTarget(config: Pick<SshServerConfigInput, 'host' | 'port' | 'username'>): string {
   return `${config.username}@${config.host}:${config.port}`
-}
-
-function buildSshTerminalCreateOptions(config: SshServerConfig): TerminalCreateOptions {
-  const args: string[] = []
-
-  if (config.authMethod === 'password') {
-    args.push('-o', 'PreferredAuthentications=password', '-o', 'PubkeyAuthentication=no')
-  }
-
-  args.push('-p', String(config.port), `${config.username}@${config.host}`)
-
-  return {
-    args,
-    command: 'ssh',
-    title: config.name,
-    trackCwd: false
-  }
 }
 
 function upsertSshServers(
@@ -604,8 +588,9 @@ function TerminalApp(): React.JSX.Element {
       activeTabIdRef.current === null || tabsRef.current.length === 0
     const nextTitle = options?.title?.trim() || defaultTabTitle
 
-    if (options?.terminalCreateOptions || options?.title) {
+    if (options?.createTerminal || options?.terminalCreateOptions || options?.title) {
       pendingInitialTabStateRef.current.set(tabId, {
+        createTerminal: options.createTerminal,
         terminalCreateOptions: options.terminalCreateOptions,
         title: options.title?.trim()
       })
@@ -715,9 +700,13 @@ function TerminalApp(): React.JSX.Element {
       }
 
       const pendingInitialTabState = pendingInitialTabStateRef.current.get(tabId)
+      const createTerminalRequest = Promise.resolve().then(() =>
+        pendingInitialTabState?.createTerminal
+          ? pendingInitialTabState.createTerminal()
+          : window.api.terminal.create(pendingInitialTabState?.terminalCreateOptions)
+      )
 
-      window.api.terminal
-        .create(pendingInitialTabState?.terminalCreateOptions)
+      createTerminalRequest
         .then(({ terminalId, title }) => {
           const currentRuntime = runtimesRef.current.get(tabId)
 
@@ -1126,7 +1115,7 @@ function TerminalApp(): React.JSX.Element {
     (server: SshServerConfig): void => {
       setIsSshMenuOpen(false)
       createTab({
-        terminalCreateOptions: buildSshTerminalCreateOptions(server),
+        createTerminal: () => window.api.ssh.connect(server.id),
         title: server.name
       })
     },

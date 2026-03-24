@@ -52,6 +52,7 @@ const terminal: TerminalApi = {
 }
 
 const ssh: SshApi = {
+  connect: (configId) => ipcRenderer.invoke('ssh:connect', configId),
   listConfigs: () => ipcRenderer.invoke('ssh:list-configs'),
   saveConfig: (config) => ipcRenderer.invoke('ssh:save-config', config),
   onConfigAdded: (callback) => {

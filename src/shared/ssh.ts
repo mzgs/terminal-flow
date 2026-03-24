@@ -1,3 +1,5 @@
+import type { TerminalCreateResult } from './terminal'
+
 export type SshAuthMethod = 'privateKey' | 'password'
 
 export interface SshServerConfigInput {
@@ -15,6 +17,7 @@ export interface SshServerConfig extends SshServerConfigInput {
 }
 
 export interface SshApi {
+  connect: (configId: string) => Promise<TerminalCreateResult>
   listConfigs: () => Promise<SshServerConfig[]>
   onConfigAdded: (callback: (config: SshServerConfig) => void) => () => void
   saveConfig: (config: SshServerConfigInput) => Promise<void>

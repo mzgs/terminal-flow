@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, ipcMain, type WebContents } from 'electron'
+import { app, shell, safeStorage, BrowserWindow, ipcMain, type WebContents } from 'electron'
 import { execFileSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import {
@@ -39,6 +39,8 @@ const ownersWithCleanup = new Set<number>()
 let nextTerminalId = 1
 let sshServers: SshServerConfig[] = []
 const sshServersStoreFileName = 'ssh-servers.json'
+const sshPasswordsStoreFileName = 'ssh-passwords.json'
+let sshPasswordBlobs = new Map<string, string>()
 
 function ensureNodePtyHelpersExecutable(): void {
   if (process.platform === 'win32') {
@@ -257,7 +259,7 @@ function stopTerminalCwdTracking(session: TerminalSession): void {
   session.cwdRefreshTimeout = null
 }
 
-function getTerminalEnv(cwd: string): Record<string, string> {
+function getTerminalEnv(cwd: string, extraEnv?: Record<string, string>): Record<string, string> {
   const env: Record<string, string> = {}
 
   for (const [key, value] of Object.entries(process.env)) {
@@ -271,6 +273,12 @@ function getTerminalEnv(cwd: string): Record<string, string> {
   env.TERM = 'xterm-256color'
   env.TERM_PROGRAM = app.getName()
 
+  if (extraEnv) {
+    for (const [key, value] of Object.entries(extraEnv)) {
+      env[key] = value
+    }
+  }
+
   return env
 }
 
@@ -279,7 +287,7 @@ function spawnTerminalProcess(options?: TerminalCreateOptions): TerminalSpawnRes
     options?.cwd && options.cwd.trim() !== '' && isDirectory(options.cwd.trim())
       ? options.cwd.trim()
       : getTerminalCwd()
-  const env = getTerminalEnv(cwd)
+  const env = getTerminalEnv(cwd, options?.env)
 
   if (options?.command) {
     const shellName = formatShellName(options.command)
@@ -469,6 +477,150 @@ function getSshServersStorePath(): string {
   return join(app.getPath('userData'), sshServersStoreFileName)
 }
 
+function getSshPasswordsStorePath(): string {
+  return join(app.getPath('userData'), sshPasswordsStoreFileName)
+}
+
+function getSshAskpassHelperPath(): string {
+  return join(
+    app.getPath('userData'),
+    process.platform === 'win32' ? 'ssh-askpass.cmd' : 'ssh-askpass.sh'
+  )
+}
+
+function isSecureSshPasswordStorageAvailable(): boolean {
+  if (!safeStorage.isEncryptionAvailable()) {
+    return false
+  }
+
+  if (process.platform === 'linux') {
+    return safeStorage.getSelectedStorageBackend() !== 'basic_text'
+  }
+
+  return true
+}
+
+function assertSecureSshPasswordStorageAvailable(): void {
+  if (isSecureSshPasswordStorageAvailable()) {
+    return
+  }
+
+  if (!safeStorage.isEncryptionAvailable()) {
+    throw new Error('Secure password storage is unavailable on this system.')
+  }
+
+  if (process.platform === 'linux' && safeStorage.getSelectedStorageBackend() === 'basic_text') {
+    throw new Error(
+      'Secure password storage is unavailable because Electron is using the basic_text backend.'
+    )
+  }
+}
+
+function persistSshPasswords(): void {
+  try {
+    writeFileSync(
+      getSshPasswordsStorePath(),
+      JSON.stringify(Object.fromEntries(sshPasswordBlobs), null, 2),
+      'utf8'
+    )
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    throw new Error(`Unable to persist SSH passwords: ${message}`)
+  }
+}
+
+function loadPersistedSshPasswords(): void {
+  const storePath = getSshPasswordsStorePath()
+
+  if (!existsSync(storePath)) {
+    sshPasswordBlobs = new Map()
+    return
+  }
+
+  try {
+    const rawValue = readFileSync(storePath, 'utf8')
+    const parsedValue: unknown = JSON.parse(rawValue)
+
+    if (!parsedValue || typeof parsedValue !== 'object' || Array.isArray(parsedValue)) {
+      console.warn(`Unexpected SSH password store format in ${storePath}`)
+      sshPasswordBlobs = new Map()
+      return
+    }
+
+    sshPasswordBlobs = new Map(
+      Object.entries(parsedValue).filter(
+        (entry): entry is [string, string] =>
+          typeof entry[0] === 'string' && typeof entry[1] === 'string'
+      )
+    )
+  } catch (error) {
+    console.warn(`Failed to load SSH passwords from ${storePath}`, error)
+    sshPasswordBlobs = new Map()
+  }
+}
+
+function deleteStoredSshPassword(configId: string): void {
+  if (!sshPasswordBlobs.delete(configId)) {
+    return
+  }
+
+  persistSshPasswords()
+}
+
+function storeSshPassword(configId: string, password: string): void {
+  if (password === '') {
+    deleteStoredSshPassword(configId)
+    return
+  }
+
+  assertSecureSshPasswordStorageAvailable()
+  sshPasswordBlobs.set(configId, safeStorage.encryptString(password).toString('base64'))
+  persistSshPasswords()
+}
+
+function getStoredSshPassword(configId: string): string | null {
+  const encryptedPassword = sshPasswordBlobs.get(configId)
+
+  if (!encryptedPassword) {
+    return null
+  }
+
+  try {
+    return safeStorage.decryptString(Buffer.from(encryptedPassword, 'base64'))
+  } catch (error) {
+    console.warn(`Failed to decrypt SSH password for ${configId}`, error)
+    return null
+  }
+}
+
+function ensureSshAskpassHelper(): string | null {
+  if (process.platform === 'win32') {
+    return null
+  }
+
+  const helperPath = getSshAskpassHelperPath()
+  const helperContents = `#!/bin/sh
+if [ -z "\${TERMINAL_SSH_PASSWORD+x}" ]; then
+  exit 1
+fi
+
+printf '%s\\n' "$TERMINAL_SSH_PASSWORD"
+`
+
+  try {
+    if (!existsSync(helperPath) || readFileSync(helperPath, 'utf8') !== helperContents) {
+      writeFileSync(helperPath, helperContents, 'utf8')
+    }
+
+    chmodSync(helperPath, 0o700)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    throw new Error(`Unable to prepare SSH askpass helper: ${message}`)
+  }
+
+  return helperPath
+}
+
 function persistSshServers(nextSshServers: SshServerConfig[]): void {
   try {
     writeFileSync(
@@ -524,6 +676,57 @@ function addSshServer(config: SshServerConfig): void {
 
   persistSshServers(nextSshServers)
   sshServers = nextSshServers
+}
+
+function buildSshTerminalCreateOptions(
+  config: SshServerConfig,
+  password: string | null
+): TerminalCreateOptions {
+  const args: string[] = []
+  let env: Record<string, string> | undefined
+
+  if (config.authMethod === 'password') {
+    args.push(
+      '-o',
+      'PreferredAuthentications=password,keyboard-interactive',
+      '-o',
+      'PubkeyAuthentication=no'
+    )
+
+    if (password) {
+      const askpassHelperPath = ensureSshAskpassHelper()
+
+      if (askpassHelperPath) {
+        env = {
+          SSH_ASKPASS: askpassHelperPath,
+          SSH_ASKPASS_REQUIRE: 'force',
+          TERMINAL_SSH_PASSWORD: password
+        }
+      }
+    }
+  }
+
+  args.push('-p', String(config.port), `${config.username}@${config.host}`)
+
+  return {
+    args,
+    command: 'ssh',
+    env,
+    title: config.name,
+    trackCwd: false
+  }
+}
+
+function connectToSshServer(webContents: WebContents, configId: string): TerminalCreateResult {
+  const config = sshServers.find((server) => server.id === configId)
+
+  if (!config) {
+    throw new Error('SSH server config not found.')
+  }
+
+  const password = config.authMethod === 'password' ? getStoredSshPassword(config.id) : null
+
+  return createTerminal(webContents, buildSshTerminalCreateOptions(config, password))
 }
 
 function loadRendererWindow(window: BrowserWindow): Promise<void> {
@@ -589,7 +792,23 @@ function submitSshConfig(webContents: WebContents, payload: SshServerConfigInput
     ...normalizeSshConfigInput(payload)
   }
 
-  addSshServer(config)
+  if (payload.authMethod === 'password' && payload.password !== '') {
+    storeSshPassword(config.id, payload.password)
+  } else {
+    deleteStoredSshPassword(config.id)
+  }
+
+  try {
+    addSshServer(config)
+  } catch (error) {
+    try {
+      deleteStoredSshPassword(config.id)
+    } catch (cleanupError) {
+      console.warn(`Failed to roll back SSH password for ${config.id}`, cleanupError)
+    }
+
+    throw error
+  }
 
   if (!webContents.isDestroyed()) {
     webContents.send('ssh:config-added', config)
@@ -602,6 +821,7 @@ function submitSshConfig(webContents: WebContents, payload: SshServerConfigInput
 app.whenReady().then(() => {
   ensureNodePtyHelpersExecutable()
   loadPersistedSshServers()
+  loadPersistedSshPasswords()
 
   // Set app user model id for windows
   electronApp.setAppUserModelId('com.electron')
@@ -631,6 +851,9 @@ app.whenReady().then(() => {
     destroyTerminal(terminalId)
   })
   ipcMain.handle('ssh:list-configs', () => listSshServers())
+  ipcMain.handle('ssh:connect', (event, configId: string) =>
+    connectToSshServer(event.sender, configId)
+  )
   ipcMain.handle('ssh:save-config', (event, payload: SshServerConfigInput) =>
     submitSshConfig(event.sender, payload)
   )

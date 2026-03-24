@@ -2,6 +2,7 @@ export interface TerminalCreateOptions {
   args?: string[]
   command?: string
   cwd?: string
+  env?: Record<string, string>
   title?: string
   trackCwd?: boolean
 }
