@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { FitAddon } from '@xterm/addon-fit'
 import { Terminal } from '@xterm/xterm'
-import { HardDrive, Plus, Server, X } from 'lucide-react'
+import { HardDrive, Pencil, Plus, Server, X } from 'lucide-react'
 import { Reorder, useDragControls } from 'motion/react'
 import Modal from 'react-modal'
 import '@xterm/xterm/css/xterm.css'
@@ -250,14 +250,42 @@ function upsertSshServers(
   return Array.from(configsById.values())
 }
 
-interface SshConfigDialogProps {
-  onClose: () => void
+function createSshConfigFormState(
+  serverConfig: SshServerConfig | null | undefined
+): SshServerConfigInput {
+  if (!serverConfig) {
+    return { ...defaultSshConfigInput }
+  }
+
+  return {
+    authMethod: serverConfig.authMethod,
+    description: serverConfig.description,
+    host: serverConfig.host,
+    name: serverConfig.name,
+    password: '',
+    port: serverConfig.port,
+    username: serverConfig.username
+  }
 }
 
-function SshConfigDialog({ onClose }: SshConfigDialogProps): React.JSX.Element {
-  const [formState, setFormState] = useState<SshServerConfigInput>(defaultSshConfigInput)
+interface SshConfigDialogProps {
+  onClose: () => void
+  serverConfig: SshServerConfig | null
+}
+
+function SshConfigDialog({ onClose, serverConfig }: SshConfigDialogProps): React.JSX.Element {
+  const isEditing = serverConfig !== null
+  const [formState, setFormState] = useState<SshServerConfigInput>(() =>
+    createSshConfigFormState(serverConfig)
+  )
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [isSaving, setIsSaving] = useState(false)
+
+  useEffect(() => {
+    setFormState(createSshConfigFormState(serverConfig))
+    setErrorMessage(null)
+    setIsSaving(false)
+  }, [serverConfig])
 
   const updateField = useCallback(function updateField<TField extends keyof SshServerConfigInput>(
     field: TField,
@@ -305,7 +333,16 @@ function SshConfigDialog({ onClose }: SshConfigDialogProps): React.JSX.Element {
         return
       }
 
-      if (normalizedFormState.authMethod === 'password' && normalizedFormState.password === '') {
+      const canReuseStoredPassword =
+        normalizedFormState.authMethod === 'password' &&
+        normalizedFormState.password === '' &&
+        serverConfig?.authMethod === 'password'
+
+      if (
+        normalizedFormState.authMethod === 'password' &&
+        normalizedFormState.password === '' &&
+        !canReuseStoredPassword
+      ) {
         setErrorMessage('Add a password for password authentication.')
         return
       }
@@ -313,7 +350,10 @@ function SshConfigDialog({ onClose }: SshConfigDialogProps): React.JSX.Element {
       setIsSaving(true)
 
       try {
-        await window.api.ssh.saveConfig(normalizedFormState)
+        await window.api.ssh.saveConfig({
+          ...normalizedFormState,
+          id: serverConfig?.id
+        })
         onClose()
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
@@ -321,7 +361,7 @@ function SshConfigDialog({ onClose }: SshConfigDialogProps): React.JSX.Element {
         setIsSaving(false)
       }
     },
-    [formState, onClose]
+    [formState, onClose, serverConfig]
   )
 
   return (
@@ -332,7 +372,7 @@ function SshConfigDialog({ onClose }: SshConfigDialogProps): React.JSX.Element {
       }}
       bodyOpenClassName="ssh-config-modal-open"
       className="ssh-config-card ssh-config-dialog"
-      contentLabel="Add SSH server config"
+      contentLabel={isEditing ? 'Edit SSH server config' : 'Add SSH server config'}
       isOpen
       onRequestClose={handleCancel}
       overlayClassName="ssh-config-dialog-shell"
@@ -343,10 +383,12 @@ function SshConfigDialog({ onClose }: SshConfigDialogProps): React.JSX.Element {
         <div className="ssh-config-header-main">
           <span className="ssh-config-eyebrow">SSH Server</span>
           <h2 className="ssh-config-title" id="ssh-config-title">
-            Add SSH server config
+            {isEditing ? 'Edit SSH server' : 'Add SSH server config'}
           </h2>
           <p className="ssh-config-copy">
-            Save a host definition in the main window menu for this session.
+            {isEditing
+              ? 'Update the saved host definition shown in the SSH menu.'
+              : 'Save a host definition in the main window menu for this session.'}
           </p>
         </div>
         <button
@@ -444,6 +486,9 @@ function SshConfigDialog({ onClose }: SshConfigDialogProps): React.JSX.Element {
               type="password"
               value={formState.password}
             />
+            {serverConfig?.authMethod === 'password' ? (
+              <span className="ssh-field-help">Leave blank to keep the existing password.</span>
+            ) : null}
           </label>
         )}
         <label className="ssh-field">
@@ -462,7 +507,7 @@ function SshConfigDialog({ onClose }: SshConfigDialogProps): React.JSX.Element {
             Cancel
           </button>
           <button className="ssh-config-primary" disabled={isSaving} type="submit">
-            {isSaving ? 'Saving...' : 'Save Server'}
+            {isSaving ? 'Saving...' : isEditing ? 'Update Server' : 'Save Server'}
           </button>
         </div>
       </form>
@@ -475,6 +520,7 @@ function TerminalApp(): React.JSX.Element {
   const [activeTabId, setActiveTabId] = useState<string | null>(null)
   const [isSshMenuOpen, setIsSshMenuOpen] = useState(false)
   const [isSshConfigDialogOpen, setIsSshConfigDialogOpen] = useState(false)
+  const [sshServerBeingEdited, setSshServerBeingEdited] = useState<SshServerConfig | null>(null)
   const [sshServers, setSshServers] = useState<SshServerConfig[]>([])
   const nextTabIdRef = useRef(1)
   const workspaceRef = useRef<HTMLDivElement>(null)
@@ -1104,11 +1150,19 @@ function TerminalApp(): React.JSX.Element {
 
   const handleOpenSshConfigDialog = useCallback((): void => {
     setIsSshMenuOpen(false)
+    setSshServerBeingEdited(null)
+    setIsSshConfigDialogOpen(true)
+  }, [])
+
+  const handleEditSshServer = useCallback((server: SshServerConfig): void => {
+    setIsSshMenuOpen(false)
+    setSshServerBeingEdited(server)
     setIsSshConfigDialogOpen(true)
   }, [])
 
   const handleCloseSshConfigDialog = useCallback((): void => {
     setIsSshConfigDialogOpen(false)
+    setSshServerBeingEdited(null)
   }, [])
 
   const handleConnectToSshServer = useCallback(
@@ -1249,18 +1303,29 @@ function TerminalApp(): React.JSX.Element {
                   <>
                     <div aria-hidden="true" className="tab-action-menu-divider" />
                     {sshServers.map((server) => (
-                      <button
-                        className="tab-action-menu-saved"
-                        key={server.id}
-                        onClick={() => handleConnectToSshServer(server)}
-                        role="menuitem"
-                        type="button"
-                      >
-                        <span className="tab-action-menu-saved-label">{server.name}</span>
-                        <span className="tab-action-menu-saved-meta">
-                          {formatSshTarget(server)}
-                        </span>
-                      </button>
+                      <div className="tab-action-menu-saved-row" key={server.id} role="none">
+                        <button
+                          className="tab-action-menu-saved"
+                          onClick={() => handleConnectToSshServer(server)}
+                          role="menuitem"
+                          type="button"
+                        >
+                          <span className="tab-action-menu-saved-label">{server.name}</span>
+                          <span className="tab-action-menu-saved-meta">
+                            {formatSshTarget(server)}
+                          </span>
+                        </button>
+                        <button
+                          aria-label={`Edit ${server.name}`}
+                          className="tab-action-menu-edit"
+                          onClick={() => handleEditSshServer(server)}
+                          role="menuitem"
+                          title="Edit SSH server"
+                          type="button"
+                        >
+                          <Pencil aria-hidden="true" className="tab-action-menu-edit-icon" />
+                        </button>
+                      </div>
                     ))}
                   </>
                 ) : null}
@@ -1294,7 +1359,9 @@ function TerminalApp(): React.JSX.Element {
           />
         ))}
       </section>
-      {isSshConfigDialogOpen ? <SshConfigDialog onClose={handleCloseSshConfigDialog} /> : null}
+      {isSshConfigDialogOpen ? (
+        <SshConfigDialog onClose={handleCloseSshConfigDialog} serverConfig={sshServerBeingEdited} />
+      ) : null}
     </main>
   )
 }

@@ -310,7 +310,7 @@ body {
   top: calc(100% + 8px);
   right: 0;
   z-index: 20;
-  min-width: 180px;
+  min-width: 220px;
   padding: 6px;
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 10px;
@@ -353,10 +353,19 @@ body {
   background: rgba(255, 255, 255, 0.08);
 }
 
+.tab-action-menu-saved-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px;
+  border-radius: 8px;
+}
+
 .tab-action-menu-saved {
   display: grid;
   gap: 2px;
   width: 100%;
+  min-width: 0;
   padding: 8px 12px;
   border: 0;
   border-radius: 8px;
@@ -380,6 +389,50 @@ body {
 .tab-action-menu-saved:hover,
 .tab-action-menu-saved:focus-visible {
   background: rgba(255, 255, 255, 0.08);
+  outline: none;
+}
+
+.tab-action-menu-edit {
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: rgba(181, 198, 220, 0.72);
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(4px);
+  transition:
+    opacity 160ms ease,
+    transform 160ms ease,
+    background-color 160ms ease,
+    color 160ms ease;
+}
+
+.tab-action-menu-edit-icon {
+  width: 14px;
+  height: 14px;
+  stroke-width: 2.1;
+}
+
+.tab-action-menu-saved-row:hover .tab-action-menu-edit,
+.tab-action-menu-saved-row:focus-within .tab-action-menu-edit {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateX(0);
+}
+
+.tab-action-menu-edit:hover,
+.tab-action-menu-edit:focus-visible {
+  background: rgba(255, 255, 255, 0.08);
+  color: #f5fbff;
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateX(0);
   outline: none;
 }
 
@@ -661,6 +714,14 @@ body {
   border-color: rgba(255, 255, 255, 0.1);
   background: rgba(255, 255, 255, 0.03);
   color: var(--color-text);
+}
+
+@media (hover: none) {
+  .tab-action-menu-edit {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateX(0);
+  }
 }
 
 @media (max-width: 640px) {

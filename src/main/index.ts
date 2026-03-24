@@ -14,7 +14,7 @@ import { basename, dirname, join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { spawn, type IPty } from 'node-pty'
 import icon from '../../resources/icon.png?asset'
-import type { SshServerConfig, SshServerConfigInput } from '../shared/ssh'
+import type { SshServerConfig, SshServerConfigInput, SshServerConfigSaveInput } from '../shared/ssh'
 import type { TerminalCreateOptions, TerminalCreateResult } from '../shared/terminal'
 
 interface TerminalSession {
@@ -671,8 +671,13 @@ function listSshServers(): SshServerConfig[] {
   }))
 }
 
-function addSshServer(config: SshServerConfig): void {
-  const nextSshServers = [...sshServers, sanitizeSshServerConfig(config)]
+function saveSshServer(config: SshServerConfig): void {
+  const sanitizedConfig = sanitizeSshServerConfig(config)
+  const existingConfigIndex = sshServers.findIndex((server) => server.id === config.id)
+  const nextSshServers =
+    existingConfigIndex === -1
+      ? [...sshServers, sanitizedConfig]
+      : sshServers.map((server, index) => (index === existingConfigIndex ? sanitizedConfig : server))
 
   persistSshServers(nextSshServers)
   sshServers = nextSshServers
@@ -786,25 +791,49 @@ function normalizeSshConfigInput(config: SshServerConfigInput): SshServerConfigI
   }
 }
 
-function submitSshConfig(webContents: WebContents, payload: SshServerConfigInput): void {
+function submitSshConfig(webContents: WebContents, payload: SshServerConfigSaveInput): void {
+  const existingConfig = payload.id
+    ? sshServers.find((server) => server.id === payload.id) ?? null
+    : null
+
+  if (payload.id && !existingConfig) {
+    throw new Error('SSH server config not found.')
+  }
+
   const config: SshServerConfig = {
-    id: randomUUID(),
+    id: existingConfig?.id ?? randomUUID(),
     ...normalizeSshConfigInput(payload)
   }
-
-  if (payload.authMethod === 'password' && payload.password !== '') {
-    storeSshPassword(config.id, payload.password)
-  } else {
-    deleteStoredSshPassword(config.id)
-  }
+  const previousPasswordBlob = sshPasswordBlobs.get(config.id)
+  const shouldKeepStoredPassword =
+    config.authMethod === 'password' &&
+    payload.password === '' &&
+    existingConfig?.authMethod === 'password' &&
+    typeof previousPasswordBlob === 'string'
 
   try {
-    addSshServer(config)
+    if (config.authMethod === 'password') {
+      if (payload.password !== '') {
+        storeSshPassword(config.id, payload.password)
+      } else if (!shouldKeepStoredPassword) {
+        throw new Error('Add a password for password authentication.')
+      }
+    } else {
+      deleteStoredSshPassword(config.id)
+    }
+
+    saveSshServer(config)
   } catch (error) {
     try {
-      deleteStoredSshPassword(config.id)
+      if (typeof previousPasswordBlob === 'string') {
+        sshPasswordBlobs.set(config.id, previousPasswordBlob)
+      } else {
+        sshPasswordBlobs.delete(config.id)
+      }
+
+      persistSshPasswords()
     } catch (cleanupError) {
-      console.warn(`Failed to roll back SSH password for ${config.id}`, cleanupError)
+      console.warn(`Failed to restore SSH password state for ${config.id}`, cleanupError)
     }
 
     throw error
@@ -854,7 +883,7 @@ app.whenReady().then(() => {
   ipcMain.handle('ssh:connect', (event, configId: string) =>
     connectToSshServer(event.sender, configId)
   )
-  ipcMain.handle('ssh:save-config', (event, payload: SshServerConfigInput) =>
+  ipcMain.handle('ssh:save-config', (event, payload: SshServerConfigSaveInput) =>
     submitSshConfig(event.sender, payload)
   )
 
