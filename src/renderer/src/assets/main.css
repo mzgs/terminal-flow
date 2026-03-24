@@ -21,6 +21,8 @@ body {
 }
 
 .window-titlebar {
+  position: relative;
+  z-index: 10;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) 48px auto;
   align-items: center;
@@ -104,6 +106,8 @@ body {
 }
 
 .tab-actions {
+  position: relative;
+  z-index: 11;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -242,9 +246,20 @@ body {
   line-height: 1;
 }
 
+.tab-action-menu-shell {
+  position: relative;
+  z-index: 12;
+  -webkit-app-region: no-drag;
+}
+
 .tab-action-static {
   cursor: default;
   color: rgba(214, 223, 236, 0.78);
+}
+
+.tab-action.is-open {
+  border-color: rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.1);
 }
 
 .tab-action-icon {
@@ -269,6 +284,48 @@ body {
 .tab-close:focus-visible {
   outline: 2px solid rgba(255, 255, 255, 0.22);
   outline-offset: 1px;
+}
+
+.tab-action-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 20;
+  min-width: 180px;
+  padding: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  background: rgba(8, 12, 18, 0.98);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.42);
+  -webkit-app-region: no-drag;
+}
+
+.tab-action-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #f5fbff;
+  cursor: pointer;
+  font-size: 13px;
+  text-align: left;
+}
+
+.tab-action-menu-icon {
+  width: 14px;
+  height: 14px;
+  stroke-width: 2.1;
+  flex: 0 0 auto;
+}
+
+.tab-action-menu-item:hover,
+.tab-action-menu-item:focus-visible {
+  background: rgba(255, 255, 255, 0.08);
+  outline: none;
 }
 
 .terminal-workspace {

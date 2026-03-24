@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { FitAddon } from '@xterm/addon-fit'
 import { Terminal } from '@xterm/xterm'
-import { Plus, Server, X } from 'lucide-react'
+import { HardDrive, Plus, Server, X } from 'lucide-react'
 import { Reorder, useDragControls } from 'motion/react'
 import '@xterm/xterm/css/xterm.css'
 
@@ -213,9 +213,11 @@ function SshIcon(): React.JSX.Element {
 function App(): React.JSX.Element {
   const [tabs, setTabs] = useState<TabRecord[]>([])
   const [activeTabId, setActiveTabId] = useState<string | null>(null)
+  const [isSshMenuOpen, setIsSshMenuOpen] = useState(false)
   const nextTabIdRef = useRef(1)
   const workspaceRef = useRef<HTMLDivElement>(null)
   const tabStripRef = useRef<HTMLDivElement>(null)
+  const sshMenuRef = useRef<HTMLDivElement>(null)
   const tabsRef = useRef<TabRecord[]>([])
   const activeTabIdRef = useRef<string | null>(null)
   const hostElementsRef = useRef(new Map<string, HTMLDivElement>())
@@ -674,6 +676,36 @@ function App(): React.JSX.Element {
   }, [activeTabId, syncActiveTabLayout, syncTabStripPosition, tabs.length])
 
   useEffect(() => {
+    if (!isSshMenuOpen) {
+      return
+    }
+
+    const handlePointerDown = (event: PointerEvent): void => {
+      if (sshMenuRef.current?.contains(event.target as Node)) {
+        return
+      }
+
+      setIsSshMenuOpen(false)
+    }
+
+    const handleKeyDown = (event: KeyboardEvent): void => {
+      if (event.key !== 'Escape') {
+        return
+      }
+
+      setIsSshMenuOpen(false)
+    }
+
+    window.addEventListener('pointerdown', handlePointerDown, { capture: true })
+    window.addEventListener('keydown', handleKeyDown, { capture: true })
+
+    return () => {
+      window.removeEventListener('pointerdown', handlePointerDown, { capture: true })
+      window.removeEventListener('keydown', handleKeyDown, { capture: true })
+    }
+  }, [isSshMenuOpen])
+
+  useEffect(() => {
     const hostElements = hostElementsRef.current
     const runtimes = runtimesRef.current
 
@@ -851,9 +883,33 @@ function App(): React.JSX.Element {
           >
             <Plus aria-hidden="true" className="tab-action-icon" />
           </button>
-          <span aria-hidden="true" className="tab-action tab-action-static" title="SSH">
-            <SshIcon />
-          </span>
+          <div className="tab-action-menu-shell" ref={sshMenuRef}>
+            <button
+              aria-controls="ssh-menu"
+              aria-expanded={isSshMenuOpen}
+              aria-haspopup="menu"
+              aria-label="Open SSH menu"
+              className={`tab-action${isSshMenuOpen ? ' is-open' : ''}`}
+              onClick={() => setIsSshMenuOpen((currentValue) => !currentValue)}
+              title="SSH"
+              type="button"
+            >
+              <SshIcon />
+            </button>
+            {isSshMenuOpen ? (
+              <div className="tab-action-menu" id="ssh-menu" role="menu">
+                <button
+                  className="tab-action-menu-item"
+                  onClick={() => setIsSshMenuOpen(false)}
+                  role="menuitem"
+                  type="button"
+                >
+                  <HardDrive aria-hidden="true" className="tab-action-menu-icon" />
+                  Add SSH Server
+                </button>
+              </div>
+            ) : null}
+          </div>
         </div>
       </header>
       <section
