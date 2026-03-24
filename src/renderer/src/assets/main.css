@@ -1,0 +1,70 @@
+@import './base.css';
+
+body {
+  overflow: hidden;
+  background: #000;
+}
+
+#root {
+  width: 100vw;
+  height: 100vh;
+}
+
+.app-shell {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  grid-template-rows: 40px 1fr;
+  background: #000;
+}
+
+.window-titlebar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 40px;
+  padding: 0 16px;
+  background: #111;
+  border-bottom: 1px solid #1f1f1f;
+  color: #cfcfcf;
+  -webkit-app-region: drag;
+  user-select: none;
+}
+
+.window-title {
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+.platform-macos .window-titlebar {
+  padding-left: 88px;
+}
+
+.terminal-screen {
+  width: 100%;
+  height: 100%;
+  background: #000;
+}
+
+.terminal-screen .xterm {
+  width: 100%;
+  height: 100%;
+  padding: 8px 10px;
+  background: #000;
+}
+
+.terminal-screen .xterm-viewport,
+.terminal-screen .xterm-screen,
+.terminal-screen .xterm-screen canvas {
+  background: #000 !important;
+}
+
+.terminal-screen .xterm-viewport {
+  scrollbar-width: none;
+}
+
+.terminal-screen .xterm-viewport::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}

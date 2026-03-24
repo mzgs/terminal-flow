@@ -1,0 +1,51 @@
+:root {
+  --color-background: #09111b;
+  --color-surface: rgba(10, 17, 29, 0.82);
+  --color-surface-strong: rgba(7, 13, 22, 0.96);
+  --color-border: rgba(112, 150, 189, 0.22);
+  --color-text: #eef4ff;
+  --color-text-muted: #94a8c3;
+  --color-accent: #77d7ff;
+  --color-accent-soft: rgba(119, 215, 255, 0.14);
+  --color-success: #7bf2b0;
+  --color-warning: #ffd479;
+  --color-danger: #ff8d89;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+}
+
+ul {
+  list-style: none;
+}
+
+html {
+  height: 100%;
+}
+
+body {
+  height: 100%;
+  min-height: 100vh;
+  color: var(--color-text);
+  background: var(--color-background);
+  line-height: 1.6;
+  font-family:
+    'IBM Plex Sans',
+    'Segoe UI',
+    -apple-system,
+    BlinkMacSystemFont,
+    sans-serif;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}
