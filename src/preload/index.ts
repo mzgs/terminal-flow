@@ -53,6 +53,7 @@ const terminal: TerminalApi = {
 
 const ssh: SshApi = {
   connect: (configId) => ipcRenderer.invoke('ssh:connect', configId),
+  deleteConfig: (configId) => ipcRenderer.invoke('ssh:delete-config', configId),
   listConfigs: () => ipcRenderer.invoke('ssh:list-configs'),
   saveConfig: (config) => ipcRenderer.invoke('ssh:save-config', config),
   onConfigAdded: (callback) => {
@@ -64,6 +65,17 @@ const ssh: SshApi = {
 
     return () => {
       ipcRenderer.off('ssh:config-added', listener)
+    }
+  },
+  onConfigDeleted: (callback) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: string): void => {
+      callback(payload)
+    }
+
+    ipcRenderer.on('ssh:config-deleted', listener)
+
+    return () => {
+      ipcRenderer.off('ssh:config-deleted', listener)
     }
   }
 }

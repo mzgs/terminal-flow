@@ -677,10 +677,31 @@ function saveSshServer(config: SshServerConfig): void {
   const nextSshServers =
     existingConfigIndex === -1
       ? [...sshServers, sanitizedConfig]
-      : sshServers.map((server, index) => (index === existingConfigIndex ? sanitizedConfig : server))
+      : sshServers.map((server, index) =>
+          index === existingConfigIndex ? sanitizedConfig : server
+        )
 
   persistSshServers(nextSshServers)
   sshServers = nextSshServers
+}
+
+function deleteSshServer(configId: string): void {
+  const existingConfig = sshServers.find((server) => server.id === configId)
+
+  if (!existingConfig) {
+    throw new Error('SSH server config not found.')
+  }
+
+  const nextSshServers = sshServers.filter((server) => server.id !== configId)
+
+  persistSshServers(nextSshServers)
+  sshServers = nextSshServers
+
+  try {
+    deleteStoredSshPassword(configId)
+  } catch (error) {
+    console.warn(`Failed to remove stored SSH password for ${configId}`, error)
+  }
 }
 
 function buildSshTerminalCreateOptions(
@@ -793,7 +814,7 @@ function normalizeSshConfigInput(config: SshServerConfigInput): SshServerConfigI
 
 function submitSshConfig(webContents: WebContents, payload: SshServerConfigSaveInput): void {
   const existingConfig = payload.id
-    ? sshServers.find((server) => server.id === payload.id) ?? null
+    ? (sshServers.find((server) => server.id === payload.id) ?? null)
     : null
 
   if (payload.id && !existingConfig) {
@@ -844,6 +865,14 @@ function submitSshConfig(webContents: WebContents, payload: SshServerConfigSaveI
   }
 }
 
+function removeSshConfig(webContents: WebContents, configId: string): void {
+  deleteSshServer(configId)
+
+  if (!webContents.isDestroyed()) {
+    webContents.send('ssh:config-deleted', configId)
+  }
+}
+
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
@@ -882,6 +911,9 @@ app.whenReady().then(() => {
   ipcMain.handle('ssh:list-configs', () => listSshServers())
   ipcMain.handle('ssh:connect', (event, configId: string) =>
     connectToSshServer(event.sender, configId)
+  )
+  ipcMain.handle('ssh:delete-config', (event, configId: string) =>
+    removeSshConfig(event.sender, configId)
   )
   ipcMain.handle('ssh:save-config', (event, payload: SshServerConfigSaveInput) =>
     submitSshConfig(event.sender, payload)

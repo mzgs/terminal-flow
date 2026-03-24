@@ -685,18 +685,41 @@ body {
 
 .ssh-config-actions {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
   gap: 8px;
 }
 
+.ssh-config-danger,
 .ssh-config-primary,
 .ssh-config-secondary {
   min-width: 96px;
   padding: 8px 12px;
   border-radius: 999px;
   border: 1px solid transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   cursor: pointer;
   font-size: 12px;
+}
+
+.ssh-config-danger {
+  margin-right: auto;
+  border-color: rgba(255, 130, 116, 0.22);
+  background: rgba(255, 130, 116, 0.12);
+  color: #ffb9ad;
+}
+
+.ssh-config-danger:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.ssh-config-danger-icon {
+  width: 14px;
+  height: 14px;
 }
 
 .ssh-config-primary {
@@ -747,6 +770,7 @@ body {
     flex-direction: column;
   }
 
+  .ssh-config-danger,
   .ssh-config-primary,
   .ssh-config-secondary {
     width: 100%;

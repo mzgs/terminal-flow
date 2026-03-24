@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { FitAddon } from '@xterm/addon-fit'
 import { Terminal } from '@xterm/xterm'
-import { HardDrive, Pencil, Plus, Server, X } from 'lucide-react'
+import { HardDrive, Pencil, Plus, Server, Trash2, X } from 'lucide-react'
 import { Reorder, useDragControls } from 'motion/react'
 import Modal from 'react-modal'
 import '@xterm/xterm/css/xterm.css'
@@ -250,6 +250,10 @@ function upsertSshServers(
   return Array.from(configsById.values())
 }
 
+function removeSshServer(currentConfigs: SshServerConfig[], configId: string): SshServerConfig[] {
+  return currentConfigs.filter((config) => config.id !== configId)
+}
+
 function createSshConfigFormState(
   serverConfig: SshServerConfig | null | undefined
 ): SshServerConfigInput {
@@ -279,13 +283,9 @@ function SshConfigDialog({ onClose, serverConfig }: SshConfigDialogProps): React
     createSshConfigFormState(serverConfig)
   )
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [isDeleting, setIsDeleting] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
-
-  useEffect(() => {
-    setFormState(createSshConfigFormState(serverConfig))
-    setErrorMessage(null)
-    setIsSaving(false)
-  }, [serverConfig])
+  const isBusy = isDeleting || isSaving
 
   const updateField = useCallback(function updateField<TField extends keyof SshServerConfigInput>(
     field: TField,
@@ -308,12 +308,30 @@ function SshConfigDialog({ onClose, serverConfig }: SshConfigDialogProps): React
   }, [])
 
   const handleCancel = useCallback((): void => {
-    if (isSaving) {
+    if (isBusy) {
       return
     }
 
     onClose()
-  }, [isSaving, onClose])
+  }, [isBusy, onClose])
+
+  const handleDelete = useCallback(async (): Promise<void> => {
+    if (!serverConfig || isBusy) {
+      return
+    }
+
+    setErrorMessage(null)
+    setIsDeleting(true)
+
+    try {
+      await window.api.ssh.deleteConfig(serverConfig.id)
+      onClose()
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      setErrorMessage(message || 'Unable to delete this SSH server.')
+      setIsDeleting(false)
+    }
+  }, [isBusy, onClose, serverConfig])
 
   const handleSubmit = useCallback(
     async (event: React.FormEvent<HTMLFormElement>): Promise<void> => {
@@ -347,6 +365,7 @@ function SshConfigDialog({ onClose, serverConfig }: SshConfigDialogProps): React
         return
       }
 
+      setErrorMessage(null)
       setIsSaving(true)
 
       try {
@@ -376,8 +395,8 @@ function SshConfigDialog({ onClose, serverConfig }: SshConfigDialogProps): React
       isOpen
       onRequestClose={handleCancel}
       overlayClassName="ssh-config-dialog-shell"
-      shouldCloseOnEsc={!isSaving}
-      shouldCloseOnOverlayClick={!isSaving}
+      shouldCloseOnEsc={!isBusy}
+      shouldCloseOnOverlayClick={!isBusy}
     >
       <div className="ssh-config-header">
         <div className="ssh-config-header-main">
@@ -394,7 +413,7 @@ function SshConfigDialog({ onClose, serverConfig }: SshConfigDialogProps): React
         <button
           aria-label="Close SSH server dialog"
           className="ssh-config-dismiss"
-          disabled={isSaving}
+          disabled={isBusy}
           onClick={handleCancel}
           type="button"
         >
@@ -503,10 +522,26 @@ function SshConfigDialog({ onClose, serverConfig }: SshConfigDialogProps): React
         </label>
         {errorMessage ? <p className="ssh-config-error">{errorMessage}</p> : null}
         <div className="ssh-config-actions">
-          <button className="ssh-config-secondary" onClick={handleCancel} type="button">
+          {isEditing ? (
+            <button
+              className="ssh-config-danger"
+              disabled={isBusy}
+              onClick={() => void handleDelete()}
+              type="button"
+            >
+              <Trash2 aria-hidden="true" className="ssh-config-danger-icon" />
+              {isDeleting ? 'Deleting...' : 'Delete Server'}
+            </button>
+          ) : null}
+          <button
+            className="ssh-config-secondary"
+            disabled={isBusy}
+            onClick={handleCancel}
+            type="button"
+          >
             Cancel
           </button>
-          <button className="ssh-config-primary" disabled={isSaving} type="submit">
+          <button className="ssh-config-primary" disabled={isBusy} type="submit">
             {isSaving ? 'Saving...' : isEditing ? 'Update Server' : 'Save Server'}
           </button>
         </div>
@@ -1209,6 +1244,17 @@ function TerminalApp(): React.JSX.Element {
   }, [])
 
   useEffect(() => {
+    const disposeConfigDeleted = window.api.ssh.onConfigDeleted((configId) => {
+      setSshServers((currentConfigs) => removeSshServer(currentConfigs, configId))
+      setIsSshMenuOpen(false)
+    })
+
+    return () => {
+      disposeConfigDeleted()
+    }
+  }, [])
+
+  useEffect(() => {
     const preventWindowFileDrop = (event: DragEvent): void => {
       if (!shouldHandleFileDrop(event.dataTransfer)) {
         return
@@ -1360,7 +1406,11 @@ function TerminalApp(): React.JSX.Element {
         ))}
       </section>
       {isSshConfigDialogOpen ? (
-        <SshConfigDialog onClose={handleCloseSshConfigDialog} serverConfig={sshServerBeingEdited} />
+        <SshConfigDialog
+          key={sshServerBeingEdited?.id ?? 'new'}
+          onClose={handleCloseSshConfigDialog}
+          serverConfig={sshServerBeingEdited}
+        />
       ) : null}
     </main>
   )

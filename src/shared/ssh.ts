@@ -22,7 +22,9 @@ export interface SshServerConfigSaveInput extends SshServerConfigInput {
 
 export interface SshApi {
   connect: (configId: string) => Promise<TerminalCreateResult>
+  deleteConfig: (configId: string) => Promise<void>
   listConfigs: () => Promise<SshServerConfig[]>
   onConfigAdded: (callback: (config: SshServerConfig) => void) => () => void
+  onConfigDeleted: (callback: (configId: string) => void) => () => void
   saveConfig: (config: SshServerConfigSaveInput) => Promise<void>
 }
