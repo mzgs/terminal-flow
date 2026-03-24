@@ -359,6 +359,18 @@ body {
   align-items: center;
   gap: 4px;
   border-radius: 8px;
+  transition:
+    background-color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.tab-action-menu-saved-row:hover,
+.tab-action-menu-saved-row:focus-within {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.tab-action-menu-saved-row:focus-within {
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
 }
 
 .tab-action-menu-saved {
@@ -388,7 +400,7 @@ body {
 
 .tab-action-menu-saved:hover,
 .tab-action-menu-saved:focus-visible {
-  background: rgba(255, 255, 255, 0.08);
+  background: transparent;
   outline: none;
 }
 
@@ -424,6 +436,7 @@ body {
   opacity: 1;
   pointer-events: auto;
   transform: translateX(0);
+  color: rgba(245, 251, 255, 0.82);
 }
 
 .tab-action-menu-edit:hover,
