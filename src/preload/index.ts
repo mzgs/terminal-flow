@@ -16,6 +16,17 @@ const terminal: TerminalApi = {
   resize: (terminalId, cols, rows) =>
     ipcRenderer.send('terminal:resize', { terminalId, cols, rows }),
   kill: (terminalId) => ipcRenderer.send('terminal:kill', terminalId),
+  onFindRequested: (callback) => {
+    const listener = (): void => {
+      callback()
+    }
+
+    ipcRenderer.on('terminal:find-requested', listener)
+
+    return () => {
+      ipcRenderer.off('terminal:find-requested', listener)
+    }
+  },
   onData: (callback) => {
     const listener = (_event: Electron.IpcRendererEvent, payload: TerminalDataEvent): void => {
       callback(payload)

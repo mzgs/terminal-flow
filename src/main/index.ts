@@ -41,9 +41,7 @@ let sshServers: SshServerConfig[] = []
 const sshServersStoreFileName = 'ssh-servers.json'
 const sshPasswordEncryptionSecret = 'T3rm!nal_SSH#2026$Vaulfe35dt@91xZ'
 const sshPasswordEncryptionPrefix = 'enc-v1'
-const sshPasswordEncryptionKey = createHash('sha256')
-  .update(sshPasswordEncryptionSecret)
-  .digest()
+const sshPasswordEncryptionKey = createHash('sha256').update(sshPasswordEncryptionSecret).digest()
 
 function ensureNodePtyHelpersExecutable(): void {
   if (process.platform === 'win32') {
@@ -615,9 +613,7 @@ function saveSshServer(config: SshServerConfig): void {
   const nextSshServers =
     existingConfigIndex === -1
       ? [...sshServers, config]
-      : sshServers.map((server, index) =>
-          index === existingConfigIndex ? config : server
-        )
+      : sshServers.map((server, index) => (index === existingConfigIndex ? config : server))
 
   persistSshServers(nextSshServers)
   sshServers = nextSshServers
@@ -695,6 +691,14 @@ function loadRendererWindow(window: BrowserWindow): Promise<void> {
   return window.loadFile(join(__dirname, '../renderer/index.html'))
 }
 
+function isFindShortcutInput(input: Electron.Input): boolean {
+  if (input.type !== 'keyDown') {
+    return false
+  }
+
+  return (input.meta || input.control) && input.key.toLowerCase() === 'f'
+}
+
 function createMainWindow(): BrowserWindow {
   const nextMainWindow = new BrowserWindow({
     title: 'Terminal',
@@ -725,6 +729,18 @@ function createMainWindow(): BrowserWindow {
   nextMainWindow.webContents.setWindowOpenHandler((details) => {
     shell.openExternal(details.url)
     return { action: 'deny' }
+  })
+
+  nextMainWindow.webContents.on('before-input-event', (event, input) => {
+    if (!isFindShortcutInput(input)) {
+      return
+    }
+
+    event.preventDefault()
+
+    if (!nextMainWindow.webContents.isDestroyed()) {
+      nextMainWindow.webContents.send('terminal:find-requested')
+    }
   })
 
   void loadRendererWindow(nextMainWindow)

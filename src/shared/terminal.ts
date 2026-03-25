@@ -34,6 +34,7 @@ export interface TerminalApi {
   write: (terminalId: number, data: string) => void
   resize: (terminalId: number, cols: number, rows: number) => void
   kill: (terminalId: number) => void
+  onFindRequested: (callback: () => void) => () => void
   onData: (callback: (event: TerminalDataEvent) => void) => () => void
   onCwd: (callback: (event: TerminalCwdEvent) => void) => () => void
   onExit: (callback: (event: TerminalExitEvent) => void) => () => void

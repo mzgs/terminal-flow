@@ -1,7 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { FitAddon } from '@xterm/addon-fit'
-import { Terminal } from '@xterm/xterm'
-import { HardDrive, Pencil, Plus, Server, Trash2, X } from 'lucide-react'
+import { Terminal, type IBufferCell, type ITheme } from '@xterm/xterm'
+import {
+  ChevronDown,
+  ChevronUp,
+  HardDrive,
+  Pencil,
+  Plus,
+  Search,
+  Server,
+  Trash2,
+  X
+} from 'lucide-react'
 import { Reorder, useDragControls } from 'motion/react'
 import Modal from 'react-modal'
 import '@xterm/xterm/css/xterm.css'
@@ -34,7 +44,50 @@ interface CreateTabOptions {
   title?: string
 }
 
+interface SearchMatch {
+  col: number
+  row: number
+  size: number
+}
+
+interface SearchableLine {
+  positions: Array<Pick<SearchMatch, 'col' | 'row'>>
+  text: string
+  widths: number[]
+}
+
 const defaultTabTitle = '~'
+const searchRefreshDebounceMs = 120
+const defaultTerminalTheme = {
+  background: '#000000',
+  black: '#000000',
+  blue: '#7aa2f7',
+  brightBlack: '#4c566a',
+  brightBlue: '#8db0ff',
+  brightCyan: '#7de3ff',
+  brightGreen: '#98f5a7',
+  brightMagenta: '#d6a3ff',
+  brightRed: '#ff8e8e',
+  brightWhite: '#ffffff',
+  brightYellow: '#ffe08a',
+  cursor: '#f5f5f5',
+  cursorAccent: '#000000',
+  cyan: '#63d3ff',
+  foreground: '#f5f5f5',
+  green: '#8fe388',
+  magenta: '#c792ea',
+  red: '#ff7b72',
+  selectionBackground: 'rgba(255, 255, 255, 0.18)',
+  selectionInactiveBackground: 'rgba(255, 255, 255, 0.18)',
+  white: '#f5f5f5',
+  yellow: '#e6c15a'
+} satisfies ITheme
+const searchTerminalTheme = {
+  ...defaultTerminalTheme,
+  selectionBackground: '#e0cb7d',
+  selectionForeground: '#171102',
+  selectionInactiveBackground: '#ffd84a'
+} satisfies ITheme
 
 const terminalOptions = {
   allowTransparency: true,
@@ -46,29 +99,7 @@ const terminalOptions = {
   lineHeight: 1.35,
   macOptionIsMeta: true,
   scrollback: 5000,
-  theme: {
-    background: '#000000',
-    black: '#000000',
-    blue: '#7aa2f7',
-    brightBlack: '#4c566a',
-    brightBlue: '#8db0ff',
-    brightCyan: '#7de3ff',
-    brightGreen: '#98f5a7',
-    brightMagenta: '#d6a3ff',
-    brightRed: '#ff8e8e',
-    brightWhite: '#ffffff',
-    brightYellow: '#ffe08a',
-    cursor: '#f5f5f5',
-    cursorAccent: '#000000',
-    cyan: '#63d3ff',
-    foreground: '#f5f5f5',
-    green: '#8fe388',
-    magenta: '#c792ea',
-    red: '#ff7b72',
-    selectionBackground: 'rgba(255, 255, 255, 0.18)',
-    white: '#f5f5f5',
-    yellow: '#e6c15a'
-  }
+  theme: defaultTerminalTheme
 } satisfies ConstructorParameters<typeof Terminal>[0]
 
 const defaultSshConfigInput: SshServerConfigInput = {
@@ -159,6 +190,171 @@ function getTabStatusLabel(tab: TabRecord): string {
   }
 
   return ''
+}
+
+function isEditableElement(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) {
+    return false
+  }
+
+  return (
+    target.isContentEditable ||
+    target instanceof HTMLInputElement ||
+    target instanceof HTMLSelectElement ||
+    target instanceof HTMLTextAreaElement
+  )
+}
+
+function isXtermHelperTextarea(target: EventTarget | null): boolean {
+  return target instanceof HTMLTextAreaElement && target.classList.contains('xterm-helper-textarea')
+}
+
+function appendSearchCell(
+  searchableLine: SearchableLine,
+  row: number,
+  col: number,
+  cell: IBufferCell
+): void {
+  const width = cell.getWidth()
+
+  if (width === 0) {
+    return
+  }
+
+  let cellText = cell.getChars()
+
+  if (cellText === '') {
+    cellText = cell.getCode() === 0 ? ' ' : String.fromCodePoint(cell.getCode())
+  }
+
+  for (let index = 0; index < cellText.length; index += 1) {
+    searchableLine.text += cellText[index]
+    searchableLine.positions.push({ col, row })
+    searchableLine.widths.push(index === 0 ? Math.max(1, width) : 0)
+  }
+}
+
+function trimSearchableLine(searchableLine: SearchableLine, startIndex: number): void {
+  while (searchableLine.text.length > startIndex && searchableLine.text.endsWith(' ')) {
+    searchableLine.text = searchableLine.text.slice(0, -1)
+    searchableLine.positions.pop()
+    searchableLine.widths.pop()
+  }
+}
+
+function buildSearchableLines(terminal: Terminal): SearchableLine[] {
+  const searchableLines: SearchableLine[] = []
+  const activeBuffer = terminal.buffer.active
+
+  for (let row = 0; row < activeBuffer.length; row += 1) {
+    const line = activeBuffer.getLine(row)
+
+    if (!line || line.isWrapped) {
+      continue
+    }
+
+    const searchableLine: SearchableLine = {
+      positions: [],
+      text: '',
+      widths: []
+    }
+
+    let currentRow = row
+
+    while (true) {
+      const currentLine = activeBuffer.getLine(currentRow)
+
+      if (!currentLine) {
+        break
+      }
+
+      const segmentStartIndex = searchableLine.text.length
+
+      for (let col = 0; col < terminal.cols; col += 1) {
+        const cell = currentLine.getCell(col)
+
+        if (!cell) {
+          continue
+        }
+
+        appendSearchCell(searchableLine, currentRow, col, cell)
+      }
+
+      const nextLine = activeBuffer.getLine(currentRow + 1)
+
+      if (!nextLine?.isWrapped) {
+        trimSearchableLine(searchableLine, segmentStartIndex)
+        break
+      }
+
+      currentRow += 1
+    }
+
+    searchableLines.push(searchableLine)
+    row = currentRow
+  }
+
+  return searchableLines
+}
+
+function getSearchMatches(terminal: Terminal, query: string): SearchMatch[] {
+  const normalizedQuery = query.toLocaleLowerCase()
+
+  if (normalizedQuery === '') {
+    return []
+  }
+
+  const matches: SearchMatch[] = []
+
+  for (const searchableLine of buildSearchableLines(terminal)) {
+    const normalizedLineText = searchableLine.text.toLocaleLowerCase()
+    let searchStartIndex = 0
+
+    while (searchStartIndex <= normalizedLineText.length - normalizedQuery.length) {
+      const matchIndex = normalizedLineText.indexOf(normalizedQuery, searchStartIndex)
+
+      if (matchIndex === -1) {
+        break
+      }
+
+      const matchPosition = searchableLine.positions[matchIndex]
+
+      if (matchPosition) {
+        let matchSize = 0
+
+        for (
+          let index = matchIndex;
+          index < Math.min(searchableLine.widths.length, matchIndex + normalizedQuery.length);
+          index += 1
+        ) {
+          matchSize += searchableLine.widths[index] ?? 0
+        }
+
+        if (matchSize > 0) {
+          matches.push({
+            ...matchPosition,
+            size: matchSize
+          })
+        }
+      }
+
+      searchStartIndex = matchIndex + Math.max(1, normalizedQuery.length)
+    }
+  }
+
+  return matches
+}
+
+function selectSearchMatch(terminal: Terminal, match: SearchMatch): void {
+  terminal.clearSelection()
+  terminal.select(match.col, match.row, match.size)
+
+  const viewportTop = terminal.buffer.active.viewportY
+  const viewportBottom = viewportTop + terminal.rows
+
+  if (match.row >= viewportBottom || match.row < viewportTop) {
+    terminal.scrollLines(match.row - viewportTop - Math.floor(terminal.rows / 2))
+  }
 }
 
 interface ReorderableTabProps {
@@ -553,6 +749,10 @@ function SshConfigDialog({ onClose, serverConfig }: SshConfigDialogProps): React
 function TerminalApp(): React.JSX.Element {
   const [tabs, setTabs] = useState<TabRecord[]>([])
   const [activeTabId, setActiveTabId] = useState<string | null>(null)
+  const [isSearchOpen, setIsSearchOpen] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchResultCount, setSearchResultCount] = useState(0)
+  const [searchResultIndex, setSearchResultIndex] = useState(-1)
   const [isSshMenuOpen, setIsSshMenuOpen] = useState(false)
   const [isSshConfigDialogOpen, setIsSshConfigDialogOpen] = useState(false)
   const [sshServerBeingEdited, setSshServerBeingEdited] = useState<SshServerConfig | null>(null)
@@ -563,8 +763,14 @@ function TerminalApp(): React.JSX.Element {
   const sshMenuRef = useRef<HTMLDivElement>(null)
   const tabsRef = useRef<TabRecord[]>([])
   const activeTabIdRef = useRef<string | null>(null)
+  const isSearchOpenRef = useRef(false)
   const hostElementsRef = useRef(new Map<string, HTMLDivElement>())
   const runtimesRef = useRef(new Map<string, TerminalRuntime>())
+  const searchMatchesRef = useRef<SearchMatch[]>([])
+  const searchRefreshTimeoutRef = useRef<number | null>(null)
+  const searchInputRef = useRef<HTMLInputElement>(null)
+  const searchResultIndexRef = useRef(-1)
+  const searchQueryRef = useRef('')
   const terminalToTabRef = useRef(new Map<number, string>())
   const pendingTitlesRef = useRef(new Map<number, string>())
   const pendingInitialTabStateRef = useRef(new Map<string, CreateTabOptions>())
@@ -587,6 +793,216 @@ function TerminalApp(): React.JSX.Element {
       })
     )
   }, [])
+
+  const resetSearchResults = useCallback((): void => {
+    setSearchResultCount(0)
+    setSearchResultIndex(-1)
+  }, [])
+
+  const cancelQueuedSearchRefresh = useCallback((): void => {
+    if (searchRefreshTimeoutRef.current === null) {
+      return
+    }
+
+    window.clearTimeout(searchRefreshTimeoutRef.current)
+    searchRefreshTimeoutRef.current = null
+  }, [])
+
+  const clearSearchSelection = useCallback((): void => {
+    searchMatchesRef.current = []
+
+    for (const runtime of runtimesRef.current.values()) {
+      if (runtime.disposed) {
+        continue
+      }
+
+      runtime.terminal.clearSelection()
+    }
+  }, [])
+
+  const applyTerminalTheme = useCallback((theme: ITheme): void => {
+    for (const runtime of runtimesRef.current.values()) {
+      if (runtime.disposed) {
+        continue
+      }
+
+      runtime.terminal.options.theme = theme
+    }
+  }, [])
+
+  const focusActiveTerminal = useCallback((): void => {
+    const currentActiveTabId = activeTabIdRef.current
+
+    if (!currentActiveTabId) {
+      return
+    }
+
+    const runtime = runtimesRef.current.get(currentActiveTabId)
+
+    if (!runtime || runtime.disposed) {
+      return
+    }
+
+    runtime.terminal.focus()
+  }, [])
+
+  const refreshSearchMatches = useCallback(
+    (tabId: string | null, query: string): boolean => {
+      if (!tabId || query === '') {
+        clearSearchSelection()
+        resetSearchResults()
+        return false
+      }
+
+      const runtime = runtimesRef.current.get(tabId)
+
+      if (!runtime || runtime.disposed) {
+        clearSearchSelection()
+        resetSearchResults()
+        return false
+      }
+
+      const matches = getSearchMatches(runtime.terminal, query)
+      searchMatchesRef.current = matches
+
+      if (matches.length === 0) {
+        runtime.terminal.clearSelection()
+        resetSearchResults()
+        return false
+      }
+
+      selectSearchMatch(runtime.terminal, matches[0])
+      setSearchResultCount(matches.length)
+      setSearchResultIndex(0)
+      return true
+    },
+    [clearSearchSelection, resetSearchResults]
+  )
+
+  const queueSearchRefresh = useCallback(
+    (tabId: string | null = activeTabIdRef.current, delayMs = 0): void => {
+      cancelQueuedSearchRefresh()
+
+      if (!isSearchOpenRef.current || searchQueryRef.current === '' || !tabId) {
+        return
+      }
+
+      searchRefreshTimeoutRef.current = window.setTimeout(() => {
+        searchRefreshTimeoutRef.current = null
+        refreshSearchMatches(tabId, searchQueryRef.current)
+      }, delayMs)
+    },
+    [cancelQueuedSearchRefresh, refreshSearchMatches]
+  )
+
+  const openSearch = useCallback((): void => {
+    applyTerminalTheme(searchTerminalTheme)
+    setIsSearchOpen(true)
+  }, [applyTerminalTheme])
+
+  const closeSearch = useCallback((): void => {
+    cancelQueuedSearchRefresh()
+    clearSearchSelection()
+    applyTerminalTheme(defaultTerminalTheme)
+    resetSearchResults()
+    setSearchQuery('')
+    setIsSearchOpen(false)
+    focusActiveTerminal()
+  }, [
+    applyTerminalTheme,
+    cancelQueuedSearchRefresh,
+    clearSearchSelection,
+    focusActiveTerminal,
+    resetSearchResults
+  ])
+
+  const findNextMatch = useCallback((): void => {
+    const activeTabId = activeTabIdRef.current
+
+    if (!activeTabId || searchQueryRef.current === '') {
+      return
+    }
+
+    const runtime = runtimesRef.current.get(activeTabId)
+
+    if (!runtime || runtime.disposed) {
+      return
+    }
+
+    const matches =
+      searchMatchesRef.current.length > 0
+        ? searchMatchesRef.current
+        : getSearchMatches(runtime.terminal, searchQueryRef.current)
+
+    searchMatchesRef.current = matches
+
+    if (matches.length === 0) {
+      runtime.terminal.clearSelection()
+      resetSearchResults()
+      return
+    }
+
+    const nextIndex =
+      searchResultIndexRef.current === -1 ? 0 : (searchResultIndexRef.current + 1) % matches.length
+
+    selectSearchMatch(runtime.terminal, matches[nextIndex])
+    setSearchResultCount(matches.length)
+    setSearchResultIndex(nextIndex)
+  }, [resetSearchResults])
+
+  const findPreviousMatch = useCallback((): void => {
+    const activeTabId = activeTabIdRef.current
+
+    if (!activeTabId || searchQueryRef.current === '') {
+      return
+    }
+
+    const runtime = runtimesRef.current.get(activeTabId)
+
+    if (!runtime || runtime.disposed) {
+      return
+    }
+
+    const matches =
+      searchMatchesRef.current.length > 0
+        ? searchMatchesRef.current
+        : getSearchMatches(runtime.terminal, searchQueryRef.current)
+
+    searchMatchesRef.current = matches
+
+    if (matches.length === 0) {
+      runtime.terminal.clearSelection()
+      resetSearchResults()
+      return
+    }
+
+    const previousIndex =
+      searchResultIndexRef.current === -1
+        ? matches.length - 1
+        : (searchResultIndexRef.current - 1 + matches.length) % matches.length
+
+    selectSearchMatch(runtime.terminal, matches[previousIndex])
+    setSearchResultCount(matches.length)
+    setSearchResultIndex(previousIndex)
+  }, [resetSearchResults])
+
+  const handleSearchQueryChange = useCallback(
+    (event: React.ChangeEvent<HTMLInputElement>): void => {
+      const nextQuery = event.target.value
+
+      cancelQueuedSearchRefresh()
+      setSearchQuery(nextQuery)
+
+      if (nextQuery === '') {
+        clearSearchSelection()
+        resetSearchResults()
+        return
+      }
+
+      refreshSearchMatches(activeTabIdRef.current, nextQuery)
+    },
+    [cancelQueuedSearchRefresh, clearSearchSelection, refreshSearchMatches, resetSearchResults]
+  )
 
   const syncActiveTabLayout = useCallback((tabId: string | null, shouldFocus = false): void => {
     if (!tabId) {
@@ -756,6 +1172,7 @@ function TerminalApp(): React.JSX.Element {
 
       terminal.loadAddon(fitAddon)
       terminal.open(hostElement)
+      terminal.options.theme = isSearchOpenRef.current ? searchTerminalTheme : defaultTerminalTheme
 
       const runtime: TerminalRuntime = {
         closed: false,
@@ -778,6 +1195,14 @@ function TerminalApp(): React.JSX.Element {
 
       if (activeTabIdRef.current === tabId) {
         syncActiveTabLayout(tabId, true)
+      }
+
+      if (
+        activeTabIdRef.current === tabId &&
+        isSearchOpenRef.current &&
+        searchQueryRef.current !== ''
+      ) {
+        queueSearchRefresh(tabId, 0)
       }
 
       const pendingInitialTabState = pendingInitialTabStateRef.current.get(tabId)
@@ -846,7 +1271,7 @@ function TerminalApp(): React.JSX.Element {
           }
         })
     },
-    [syncActiveTabLayout, updateTab]
+    [queueSearchRefresh, syncActiveTabLayout, updateTab]
   )
 
   const handleTabsReorder = useCallback((nextOrder: TabRecord[]): void => {
@@ -870,6 +1295,18 @@ function TerminalApp(): React.JSX.Element {
   useEffect(() => {
     activeTabIdRef.current = activeTabId
   }, [activeTabId])
+
+  useEffect(() => {
+    isSearchOpenRef.current = isSearchOpen
+  }, [isSearchOpen])
+
+  useEffect(() => {
+    searchResultIndexRef.current = searchResultIndex
+  }, [searchResultIndex])
+
+  useEffect(() => {
+    searchQueryRef.current = searchQuery
+  }, [searchQuery])
 
   useEffect(() => {
     isUnmountingRef.current = false
@@ -913,6 +1350,14 @@ function TerminalApp(): React.JSX.Element {
       }
 
       runtime.terminal.write(event.data)
+
+      if (
+        isSearchOpenRef.current &&
+        searchQueryRef.current !== '' &&
+        activeTabIdRef.current === tabId
+      ) {
+        queueSearchRefresh(tabId, searchRefreshDebounceMs)
+      }
     })
 
     const disposeExit = window.api.terminal.onExit((event) => {
@@ -948,7 +1393,7 @@ function TerminalApp(): React.JSX.Element {
       disposeData()
       disposeExit()
     }
-  }, [updateTab])
+  }, [queueSearchRefresh, updateTab])
 
   useEffect(() => {
     const disposeCwd = window.api.terminal.onCwd((event) => {
@@ -975,6 +1420,31 @@ function TerminalApp(): React.JSX.Element {
       disposeCwd()
     }
   }, [updateTab])
+
+  useEffect(() => {
+    const disposeFindRequested = window.api.terminal.onFindRequested(() => {
+      if (isSshConfigDialogOpen) {
+        return
+      }
+
+      const activeElement = document.activeElement
+      const isSearchInputTarget = searchInputRef.current === activeElement
+
+      if (
+        isEditableElement(activeElement) &&
+        !isSearchInputTarget &&
+        !isXtermHelperTextarea(activeElement)
+      ) {
+        return
+      }
+
+      openSearch()
+    })
+
+    return () => {
+      disposeFindRequested()
+    }
+  }, [isSshConfigDialogOpen, openSearch])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
@@ -1036,6 +1506,29 @@ function TerminalApp(): React.JSX.Element {
   }, [closeTab, createTab, selectAdjacentTab])
 
   useEffect(() => {
+    if (!isSearchOpen) {
+      return
+    }
+
+    window.requestAnimationFrame(() => {
+      searchInputRef.current?.focus()
+      searchInputRef.current?.select()
+    })
+  }, [activeTabId, isSearchOpen])
+
+  useEffect(() => {
+    if (!isSearchOpen) {
+      return
+    }
+
+    if (searchQuery === '') {
+      return
+    }
+
+    queueSearchRefresh(activeTabId, 0)
+  }, [activeTabId, isSearchOpen, queueSearchRefresh, searchQuery])
+
+  useEffect(() => {
     syncActiveTabLayout(activeTabId, true)
     syncTabStripPosition(activeTabId)
   }, [activeTabId, syncActiveTabLayout, syncTabStripPosition, tabs.length])
@@ -1077,6 +1570,7 @@ function TerminalApp(): React.JSX.Element {
 
     return () => {
       isUnmountingRef.current = true
+      cancelQueuedSearchRefresh()
 
       for (const tabId of Array.from(runtimes.keys())) {
         disposeTabRuntime(tabId, true)
@@ -1085,7 +1579,7 @@ function TerminalApp(): React.JSX.Element {
       pendingInitialTabState.clear()
       hostElements.clear()
     }
-  }, [disposeTabRuntime])
+  }, [cancelQueuedSearchRefresh, disposeTabRuntime])
 
   const handleTabStripWheel = useCallback((event: React.WheelEvent<HTMLDivElement>): void => {
     const tabStrip = tabStripRef.current
@@ -1272,6 +1766,15 @@ function TerminalApp(): React.JSX.Element {
     }
   }, [])
 
+  const searchStatusText =
+    searchQuery === ''
+      ? 'Type to search'
+      : searchResultCount === 0
+        ? 'No matches'
+        : searchResultIndex >= 0
+          ? `${searchResultIndex + 1}/${searchResultCount}`
+          : `${searchResultCount} matches`
+
   return (
     <main className={`app-shell ${platformClassName}`}>
       <header className="window-titlebar">
@@ -1386,6 +1889,75 @@ function TerminalApp(): React.JSX.Element {
         onDrop={handleWorkspaceDrop}
         ref={workspaceRef}
       >
+        {isSearchOpen ? (
+          <div className="terminal-search" role="search">
+            <label className="terminal-search-field">
+              <Search aria-hidden="true" className="terminal-search-icon" />
+              <input
+                aria-label="Search current terminal"
+                className="terminal-search-input"
+                onChange={handleSearchQueryChange}
+                onKeyDown={(event) => {
+                  if (event.key === 'Escape') {
+                    event.preventDefault()
+                    closeSearch()
+                    return
+                  }
+
+                  if (event.key === 'Enter') {
+                    event.preventDefault()
+
+                    if (event.shiftKey) {
+                      findPreviousMatch()
+                      return
+                    }
+
+                    findNextMatch()
+                  }
+                }}
+                placeholder="Find in terminal"
+                ref={searchInputRef}
+                type="text"
+                value={searchQuery}
+              />
+            </label>
+            <span
+              aria-live="polite"
+              className={`terminal-search-status${searchQuery !== '' && searchResultCount === 0 ? ' is-empty' : ''}`}
+            >
+              {searchStatusText}
+            </span>
+            <button
+              aria-label="Previous match"
+              className="terminal-search-button"
+              disabled={searchQuery === ''}
+              onClick={findPreviousMatch}
+              title="Previous match"
+              type="button"
+            >
+              <ChevronUp aria-hidden="true" className="terminal-search-button-icon" />
+            </button>
+            <button
+              aria-label="Next match"
+              className="terminal-search-button"
+              disabled={searchQuery === ''}
+              onClick={findNextMatch}
+              title="Next match"
+              type="button"
+            >
+              <ChevronDown aria-hidden="true" className="terminal-search-button-icon" />
+            </button>
+            <button
+              aria-label="Close search"
+              className="terminal-search-button"
+              onClick={closeSearch}
+              title="Close search"
+              type="button"
+            >
+              <X aria-hidden="true" className="terminal-search-button-icon" />
+            </button>
+          </div>
+        ) : null}
         {tabs.map((tab) => (
           <div
             aria-hidden={tab.id !== activeTabId}

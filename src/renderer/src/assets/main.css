@@ -455,6 +455,100 @@ body {
   background: #000;
 }
 
+.terminal-search {
+  position: absolute;
+  top: 12px;
+  right: 14px;
+  z-index: 18;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: min(480px, calc(100% - 28px));
+  padding: 8px;
+  border: 1px solid rgba(119, 215, 255, 0.16);
+  border-radius: 12px;
+  background: rgba(8, 14, 23, 0.94);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(12px);
+}
+
+.terminal-search-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0 10px;
+  height: 34px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.terminal-search-icon,
+.terminal-search-button-icon {
+  width: 14px;
+  height: 14px;
+  stroke-width: 2.1;
+}
+
+.terminal-search-icon {
+  flex: 0 0 auto;
+  color: rgba(181, 198, 220, 0.72);
+}
+
+.terminal-search-input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: #f5fbff;
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+}
+
+.terminal-search-input::placeholder {
+  color: rgba(181, 198, 220, 0.52);
+}
+
+.terminal-search-status {
+  flex: 0 0 auto;
+  min-width: 72px;
+  color: rgba(181, 198, 220, 0.72);
+  font-size: 12px;
+  text-align: right;
+}
+
+.terminal-search-status.is-empty {
+  color: #ffb3ad;
+}
+
+.terminal-search-button {
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  color: #f5fbff;
+  cursor: pointer;
+}
+
+.terminal-search-button:hover:not(:disabled),
+.terminal-search-button:focus-visible {
+  border-color: rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.08);
+  outline: none;
+}
+
+.terminal-search-button:disabled {
+  opacity: 0.46;
+  cursor: default;
+}
+
 .terminal-screen {
   position: absolute;
   inset: 0;
@@ -488,6 +582,19 @@ body {
 .terminal-screen .xterm-viewport::-webkit-scrollbar {
   width: 0;
   height: 0;
+}
+
+@media (max-width: 720px) {
+  .terminal-search {
+    top: 10px;
+    right: 10px;
+    left: 10px;
+    min-width: 0;
+  }
+
+  .terminal-search-status {
+    min-width: 56px;
+  }
 }
 
 .ssh-config-dialog-shell {
