@@ -1209,11 +1209,13 @@ function parsePersistedSessionTab(
   }
 
   const restoreState = parsePersistedRestorableTabState(record.restoreState)
-  const outputLines = parsePersistedOutputLines(record.outputLines)
 
   if (!restoreState) {
     return null
   }
+
+  const outputLines =
+    restoreState.kind === 'ssh' ? undefined : parsePersistedOutputLines(record.outputLines)
 
   seenTabIds.add(id)
 

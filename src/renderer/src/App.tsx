@@ -372,6 +372,10 @@ function restorePersistedTerminalOutput(terminal: Terminal, outputLines?: string
   terminal.write('\r\n')
 }
 
+function shouldPersistTabOutputLines(restoreState: RestorableTabState): boolean {
+  return restoreState.kind !== 'ssh'
+}
+
 function getRestorableTabs(
   tabs: TabRecord[],
   getOutputLines: (tab: TabRecord) => string[] | undefined
@@ -379,7 +383,9 @@ function getRestorableTabs(
   return tabs
     .filter((tab) => tab.status !== 'closed' && !tab.errorMessage)
     .map((tab) => {
-      const outputLines = getOutputLines(tab)
+      const outputLines = shouldPersistTabOutputLines(tab.restoreState)
+        ? getOutputLines(tab)
+        : undefined
 
       return {
         id: tab.id,
