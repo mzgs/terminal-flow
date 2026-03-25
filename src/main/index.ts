@@ -1,6 +1,6 @@
-import { app, shell, safeStorage, BrowserWindow, ipcMain, type WebContents } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, type WebContents } from 'electron'
 import { execFileSync } from 'node:child_process'
-import { randomUUID } from 'node:crypto'
+import { createCipheriv, createDecipheriv, createHash, randomBytes, randomUUID } from 'node:crypto'
 import {
   accessSync,
   chmodSync,
@@ -39,8 +39,11 @@ const ownersWithCleanup = new Set<number>()
 let nextTerminalId = 1
 let sshServers: SshServerConfig[] = []
 const sshServersStoreFileName = 'ssh-servers.json'
-const sshPasswordsStoreFileName = 'ssh-passwords.json'
-let sshPasswordBlobs = new Map<string, string>()
+const sshPasswordEncryptionSecret = 'T3rm!nal_SSH#2026$Vaulfe35dt@91xZ'
+const sshPasswordEncryptionPrefix = 'enc-v1'
+const sshPasswordEncryptionKey = createHash('sha256')
+  .update(sshPasswordEncryptionSecret)
+  .digest()
 
 function ensureNodePtyHelpersExecutable(): void {
   if (process.platform === 'win32') {
@@ -429,7 +432,7 @@ function isSshAuthMethod(value: unknown): value is SshServerConfig['authMethod']
   return value === 'privateKey' || value === 'password'
 }
 
-function sanitizeSshServerConfig(config: SshServerConfig): SshServerConfig {
+function stripSshServerPassword(config: SshServerConfig): SshServerConfig {
   return {
     ...config,
     password: ''
@@ -461,24 +464,20 @@ function parsePersistedSshServerConfig(value: unknown): SshServerConfig | null {
     return null
   }
 
-  return sanitizeSshServerConfig({
+  return {
     id: record.id,
     authMethod: record.authMethod,
     description: record.description.trim(),
     host: record.host.trim(),
     name: record.name.trim(),
-    password: '',
+    password: typeof record.password === 'string' ? record.password : '',
     port: Math.max(1, Math.floor(portValue)),
     username: record.username.trim()
-  })
+  }
 }
 
 function getSshServersStorePath(): string {
   return join(app.getPath('userData'), sshServersStoreFileName)
-}
-
-function getSshPasswordsStorePath(): string {
-  return join(app.getPath('userData'), sshPasswordsStoreFileName)
 }
 
 function getSshAskpassHelperPath(): string {
@@ -488,107 +487,57 @@ function getSshAskpassHelperPath(): string {
   )
 }
 
-function isSecureSshPasswordStorageAvailable(): boolean {
-  if (!safeStorage.isEncryptionAvailable()) {
-    return false
-  }
+function encryptSshPassword(password: string): string {
+  const initializationVector = randomBytes(12)
+  const cipher = createCipheriv('aes-256-gcm', sshPasswordEncryptionKey, initializationVector)
+  const encryptedBuffer = Buffer.concat([cipher.update(password, 'utf8'), cipher.final()])
+  const authTag = cipher.getAuthTag()
 
-  if (process.platform === 'linux') {
-    return safeStorage.getSelectedStorageBackend() !== 'basic_text'
-  }
-
-  return true
+  return [
+    sshPasswordEncryptionPrefix,
+    initializationVector.toString('base64'),
+    authTag.toString('base64'),
+    encryptedBuffer.toString('base64')
+  ].join(':')
 }
 
-function assertSecureSshPasswordStorageAvailable(): void {
-  if (isSecureSshPasswordStorageAvailable()) {
-    return
-  }
-
-  if (!safeStorage.isEncryptionAvailable()) {
-    throw new Error('Secure password storage is unavailable on this system.')
-  }
-
-  if (process.platform === 'linux' && safeStorage.getSelectedStorageBackend() === 'basic_text') {
-    throw new Error(
-      'Secure password storage is unavailable because Electron is using the basic_text backend.'
-    )
-  }
-}
-
-function persistSshPasswords(): void {
-  try {
-    writeFileSync(
-      getSshPasswordsStorePath(),
-      JSON.stringify(Object.fromEntries(sshPasswordBlobs), null, 2),
-      'utf8'
-    )
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error)
-    throw new Error(`Unable to persist SSH passwords: ${message}`)
-  }
-}
-
-function loadPersistedSshPasswords(): void {
-  const storePath = getSshPasswordsStorePath()
-
-  if (!existsSync(storePath)) {
-    sshPasswordBlobs = new Map()
-    return
-  }
-
-  try {
-    const rawValue = readFileSync(storePath, 'utf8')
-    const parsedValue: unknown = JSON.parse(rawValue)
-
-    if (!parsedValue || typeof parsedValue !== 'object' || Array.isArray(parsedValue)) {
-      console.warn(`Unexpected SSH password store format in ${storePath}`)
-      sshPasswordBlobs = new Map()
-      return
-    }
-
-    sshPasswordBlobs = new Map(
-      Object.entries(parsedValue).filter(
-        (entry): entry is [string, string] =>
-          typeof entry[0] === 'string' && typeof entry[1] === 'string'
-      )
-    )
-  } catch (error) {
-    console.warn(`Failed to load SSH passwords from ${storePath}`, error)
-    sshPasswordBlobs = new Map()
-  }
-}
-
-function deleteStoredSshPassword(configId: string): void {
-  if (!sshPasswordBlobs.delete(configId)) {
-    return
-  }
-
-  persistSshPasswords()
-}
-
-function storeSshPassword(configId: string, password: string): void {
+function decryptSshPassword(password: string): string | null {
   if (password === '') {
-    deleteStoredSshPassword(configId)
-    return
+    return null
   }
 
-  assertSecureSshPasswordStorageAvailable()
-  sshPasswordBlobs.set(configId, safeStorage.encryptString(password).toString('base64'))
-  persistSshPasswords()
-}
+  if (!password.startsWith(`${sshPasswordEncryptionPrefix}:`)) {
+    return password
+  }
 
-function getStoredSshPassword(configId: string): string | null {
-  const encryptedPassword = sshPasswordBlobs.get(configId)
+  const [prefix, initializationVectorBase64, authTagBase64, encryptedBase64, ...rest] =
+    password.split(':')
 
-  if (!encryptedPassword) {
+  if (
+    prefix !== sshPasswordEncryptionPrefix ||
+    !initializationVectorBase64 ||
+    !authTagBase64 ||
+    !encryptedBase64 ||
+    rest.length > 0
+  ) {
+    console.warn('Unexpected SSH password format in ssh-servers.json')
     return null
   }
 
   try {
-    return safeStorage.decryptString(Buffer.from(encryptedPassword, 'base64'))
+    const decipher = createDecipheriv(
+      'aes-256-gcm',
+      sshPasswordEncryptionKey,
+      Buffer.from(initializationVectorBase64, 'base64')
+    )
+    decipher.setAuthTag(Buffer.from(authTagBase64, 'base64'))
+
+    return Buffer.concat([
+      decipher.update(Buffer.from(encryptedBase64, 'base64')),
+      decipher.final()
+    ]).toString('utf8')
   } catch (error) {
-    console.warn(`Failed to decrypt SSH password for ${configId}`, error)
+    console.warn('Failed to decrypt SSH password from ssh-servers.json', error)
     return null
   }
 }
@@ -623,15 +572,7 @@ printf '%s\\n' "$TERMINAL_SSH_PASSWORD"
 
 function persistSshServers(nextSshServers: SshServerConfig[]): void {
   try {
-    writeFileSync(
-      getSshServersStorePath(),
-      JSON.stringify(
-        nextSshServers.map((config) => sanitizeSshServerConfig(config)),
-        null,
-        2
-      ),
-      'utf8'
-    )
+    writeFileSync(getSshServersStorePath(), JSON.stringify(nextSshServers, null, 2), 'utf8')
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
     throw new Error(`Unable to persist SSH servers: ${message}`)
@@ -666,19 +607,16 @@ function loadPersistedSshServers(): void {
 }
 
 function listSshServers(): SshServerConfig[] {
-  return sshServers.map((config) => ({
-    ...config
-  }))
+  return sshServers.map((config) => stripSshServerPassword(config))
 }
 
 function saveSshServer(config: SshServerConfig): void {
-  const sanitizedConfig = sanitizeSshServerConfig(config)
   const existingConfigIndex = sshServers.findIndex((server) => server.id === config.id)
   const nextSshServers =
     existingConfigIndex === -1
-      ? [...sshServers, sanitizedConfig]
+      ? [...sshServers, config]
       : sshServers.map((server, index) =>
-          index === existingConfigIndex ? sanitizedConfig : server
+          index === existingConfigIndex ? config : server
         )
 
   persistSshServers(nextSshServers)
@@ -696,12 +634,6 @@ function deleteSshServer(configId: string): void {
 
   persistSshServers(nextSshServers)
   sshServers = nextSshServers
-
-  try {
-    deleteStoredSshPassword(configId)
-  } catch (error) {
-    console.warn(`Failed to remove stored SSH password for ${configId}`, error)
-  }
 }
 
 function buildSshTerminalCreateOptions(
@@ -750,7 +682,7 @@ function connectToSshServer(webContents: WebContents, configId: string): Termina
     throw new Error('SSH server config not found.')
   }
 
-  const password = config.authMethod === 'password' ? getStoredSshPassword(config.id) : null
+  const password = config.authMethod === 'password' ? decryptSshPassword(config.password) : null
 
   return createTerminal(webContents, buildSshTerminalCreateOptions(config, password))
 }
@@ -806,7 +738,7 @@ function normalizeSshConfigInput(config: SshServerConfigInput): SshServerConfigI
     description: config.description.trim(),
     host: config.host.trim(),
     name: config.name.trim(),
-    password: '',
+    password: config.password,
     port: Number.isFinite(config.port) ? Math.max(1, Math.floor(config.port)) : 22,
     username: config.username.trim()
   }
@@ -821,47 +753,30 @@ function submitSshConfig(webContents: WebContents, payload: SshServerConfigSaveI
     throw new Error('SSH server config not found.')
   }
 
+  const normalizedConfig = normalizeSshConfigInput(payload)
+  const encryptedPassword =
+    normalizedConfig.authMethod === 'password'
+      ? normalizedConfig.password !== ''
+        ? encryptSshPassword(normalizedConfig.password)
+        : existingConfig?.authMethod === 'password'
+          ? existingConfig.password
+          : ''
+      : ''
+
+  if (normalizedConfig.authMethod === 'password' && encryptedPassword === '') {
+    throw new Error('Add a password for password authentication.')
+  }
+
   const config: SshServerConfig = {
     id: existingConfig?.id ?? randomUUID(),
-    ...normalizeSshConfigInput(payload)
+    ...normalizedConfig,
+    password: encryptedPassword
   }
-  const previousPasswordBlob = sshPasswordBlobs.get(config.id)
-  const shouldKeepStoredPassword =
-    config.authMethod === 'password' &&
-    payload.password === '' &&
-    existingConfig?.authMethod === 'password' &&
-    typeof previousPasswordBlob === 'string'
 
-  try {
-    if (config.authMethod === 'password') {
-      if (payload.password !== '') {
-        storeSshPassword(config.id, payload.password)
-      } else if (!shouldKeepStoredPassword) {
-        throw new Error('Add a password for password authentication.')
-      }
-    } else {
-      deleteStoredSshPassword(config.id)
-    }
-
-    saveSshServer(config)
-  } catch (error) {
-    try {
-      if (typeof previousPasswordBlob === 'string') {
-        sshPasswordBlobs.set(config.id, previousPasswordBlob)
-      } else {
-        sshPasswordBlobs.delete(config.id)
-      }
-
-      persistSshPasswords()
-    } catch (cleanupError) {
-      console.warn(`Failed to restore SSH password state for ${config.id}`, cleanupError)
-    }
-
-    throw error
-  }
+  saveSshServer(config)
 
   if (!webContents.isDestroyed()) {
-    webContents.send('ssh:config-added', config)
+    webContents.send('ssh:config-added', stripSshServerPassword(config))
   }
 }
 
@@ -879,7 +794,6 @@ function removeSshConfig(webContents: WebContents, configId: string): void {
 app.whenReady().then(() => {
   ensureNodePtyHelpersExecutable()
   loadPersistedSshServers()
-  loadPersistedSshPasswords()
 
   // Set app user model id for windows
   electronApp.setAppUserModelId('com.electron')
