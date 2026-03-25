@@ -132,6 +132,18 @@ body {
   box-shadow:
     inset 0 0 0 1px rgba(119, 215, 255, 0.12),
     0 10px 24px rgba(0, 0, 0, 0.28);
+  transition:
+    background 160ms ease,
+    box-shadow 160ms ease,
+    color 160ms ease;
+}
+
+.window-upload-progress.is-complete {
+  color: #7bf2b0;
+  background: rgba(8, 30, 18, 0.95);
+  box-shadow:
+    inset 0 0 0 1px rgba(123, 242, 176, 0.2),
+    0 10px 24px rgba(0, 0, 0, 0.28);
 }
 
 .window-upload-progress-ring {
@@ -156,6 +168,12 @@ body {
   stroke: #77d7ff;
   stroke-linecap: round;
   transition: stroke-dashoffset 140ms ease-out;
+}
+
+.window-upload-success-icon {
+  width: 15px;
+  height: 15px;
+  stroke-width: 2.75;
 }
 
 .tab-strip::-webkit-scrollbar {

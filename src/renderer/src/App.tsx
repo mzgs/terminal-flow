@@ -2,6 +2,7 @@ import { type CSSProperties, useCallback, useEffect, useRef, useState } from 're
 import { FitAddon } from '@xterm/addon-fit'
 import { Terminal, type IBufferCell, type ITheme } from '@xterm/xterm'
 import {
+  Check,
   ChevronDown,
   ChevronUp,
   Download,
@@ -3130,7 +3131,7 @@ function TerminalApp(): React.JSX.Element {
             currentProgress?.uploadId === event.uploadId ? null : currentProgress
           )
           sshUploadHideTimeoutRef.current = null
-        }, 700)
+        }, 2000)
       }
     })
 
@@ -3174,6 +3175,7 @@ function TerminalApp(): React.JSX.Element {
   const uploadProgressOffset =
     uploadProgressCircleCircumference -
     (uploadProgressCircleCircumference * uploadProgressPercent) / 100
+  const isUploadCompleted = sshUploadProgress?.status === 'completed'
   const uploadProgressRingStyle: CSSProperties | undefined = sshUploadProgress
     ? {
         strokeDasharray: uploadProgressCircleCircumference,
@@ -3223,20 +3225,36 @@ function TerminalApp(): React.JSX.Element {
         <div className="tab-actions">
           {sshUploadProgress ? (
             <div
-              aria-label={`Upload progress ${uploadProgressPercent}%`}
-              className="window-upload-progress"
-              title={`Uploading to ${sshUploadProgress.targetPath}: ${uploadProgressPercent}%`}
+              aria-label={
+                isUploadCompleted
+                  ? `Upload to ${sshUploadProgress.targetPath} completed`
+                  : `Upload progress ${uploadProgressPercent}%`
+              }
+              className={`window-upload-progress${isUploadCompleted ? ' is-complete' : ''}`}
+              title={
+                isUploadCompleted
+                  ? `Upload to ${sshUploadProgress.targetPath} completed`
+                  : `Uploading to ${sshUploadProgress.targetPath}: ${uploadProgressPercent}%`
+              }
             >
-              <svg aria-hidden="true" className="window-upload-progress-ring" viewBox="0 0 40 40">
-                <circle className="window-upload-progress-track" cx="20" cy="20" r="16" />
-                <circle
-                  className="window-upload-progress-value"
-                  cx="20"
-                  cy="20"
-                  r="16"
-                  style={uploadProgressRingStyle}
-                />
-              </svg>
+              {isUploadCompleted ? (
+                <Check aria-hidden="true" className="window-upload-success-icon" />
+              ) : (
+                <svg
+                  aria-hidden="true"
+                  className="window-upload-progress-ring"
+                  viewBox="0 0 40 40"
+                >
+                  <circle className="window-upload-progress-track" cx="20" cy="20" r="16" />
+                  <circle
+                    className="window-upload-progress-value"
+                    cx="20"
+                    cy="20"
+                    r="16"
+                    style={uploadProgressRingStyle}
+                  />
+                </svg>
+              )}
             </div>
           ) : null}
           <button
