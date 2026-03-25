@@ -768,6 +768,14 @@ function ReorderableTab({
         aria-controls={`panel-${tab.id}`}
         aria-selected={isActive}
         className="tab-button"
+        onAuxClick={(event) => {
+          if (event.button !== 1) {
+            return
+          }
+
+          event.preventDefault()
+          closeTab(tab.id)
+        }}
         onClick={() => setActiveTabId(tab.id)}
         onPointerDown={(event) => {
           if (!event.isPrimary || (event.pointerType === 'mouse' && event.button !== 0)) {
