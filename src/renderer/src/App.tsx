@@ -45,6 +45,7 @@ type TabStatus = 'connecting' | 'ready' | 'closed'
 
 interface TabRecord {
   id: string
+  outputLines?: string[]
   restoreState: RestorableTabState
   status: TabStatus
   terminalId: number | null
@@ -76,7 +77,9 @@ interface SearchMatch {
 }
 
 interface SearchableLine {
+  endRow: number
   positions: Array<Pick<SearchMatch, 'col' | 'row'>>
+  startRow: number
   text: string
   widths: number[]
 }
@@ -114,6 +117,7 @@ interface SshBrowserFileIconDescriptor {
 }
 
 const defaultTabTitle = '~'
+const maxPersistedTerminalOutputLines = 500
 const searchRefreshDebounceMs = 120
 const defaultSshBrowserWidth = 320
 const maxSshBrowserWidth = 640
@@ -340,18 +344,57 @@ function getDefaultRestorableTabState(): RestorableTabState {
   return { kind: 'local' }
 }
 
-function getRestorableTabs(tabs: TabRecord[]): SessionTabSnapshot[] {
-  return tabs
-    .filter((tab) => tab.status !== 'closed' && !tab.errorMessage)
-    .map((tab) => ({
-      id: tab.id,
-      restoreState: cloneRestorableTabState(tab.restoreState),
-      title: tab.title
-    }))
+function clonePersistedOutputLines(outputLines?: string[]): string[] | undefined {
+  if (!outputLines || outputLines.length === 0) {
+    return undefined
+  }
+
+  return outputLines.slice(-maxPersistedTerminalOutputLines)
 }
 
-function createSessionSnapshot(tabs: TabRecord[], activeTabId: string | null): SessionSnapshot {
-  const restorableTabs = getRestorableTabs(tabs)
+function getPersistedTerminalOutputLines(terminal: Terminal): string[] | undefined {
+  const cursorRow = terminal.buffer.active.baseY + terminal.buffer.active.cursorY
+  const outputLines = buildSearchableLines(terminal)
+    .filter((line) => line.endRow < cursorRow)
+    .map((line) => line.text)
+    .slice(-maxPersistedTerminalOutputLines)
+
+  return outputLines.length > 0 ? outputLines : undefined
+}
+
+function restorePersistedTerminalOutput(terminal: Terminal, outputLines?: string[]): void {
+  if (!outputLines || outputLines.length === 0) {
+    return
+  }
+
+  terminal.write(outputLines.join('\r\n'))
+  terminal.write('\r\n')
+}
+
+function getRestorableTabs(
+  tabs: TabRecord[],
+  getOutputLines: (tab: TabRecord) => string[] | undefined
+): SessionTabSnapshot[] {
+  return tabs
+    .filter((tab) => tab.status !== 'closed' && !tab.errorMessage)
+    .map((tab) => {
+      const outputLines = getOutputLines(tab)
+
+      return {
+        id: tab.id,
+        ...(outputLines ? { outputLines } : {}),
+        restoreState: cloneRestorableTabState(tab.restoreState),
+        title: tab.title
+      }
+    })
+}
+
+function createSessionSnapshot(
+  tabs: TabRecord[],
+  activeTabId: string | null,
+  getOutputLines: (tab: TabRecord) => string[] | undefined
+): SessionSnapshot {
+  const restorableTabs = getRestorableTabs(tabs, getOutputLines)
   const nextActiveTabId = restorableTabs.some((tab) => tab.id === activeTabId)
     ? activeTabId
     : (restorableTabs[0]?.id ?? null)
@@ -382,6 +425,7 @@ function buildCreateTabOptionsFromSessionTab(tab: SessionTabSnapshot): CreateTab
 function createTabRecordFromSessionTab(tab: SessionTabSnapshot): TabRecord {
   return {
     id: tab.id,
+    outputLines: clonePersistedOutputLines(tab.outputLines),
     restoreState: cloneRestorableTabState(tab.restoreState),
     status: 'connecting',
     terminalId: null,
@@ -640,7 +684,9 @@ function buildSearchableLines(terminal: Terminal): SearchableLine[] {
     }
 
     const searchableLine: SearchableLine = {
+      endRow: row,
       positions: [],
+      startRow: row,
       text: '',
       widths: []
     }
@@ -677,6 +723,7 @@ function buildSearchableLines(terminal: Terminal): SearchableLine[] {
     }
 
     searchableLines.push(searchableLine)
+    searchableLine.endRow = currentRow
     row = currentRow
   }
 
@@ -1311,6 +1358,16 @@ function TerminalApp(): React.JSX.Element {
     )
   }, [])
 
+  const getTabOutputLinesForSnapshot = useCallback((tab: TabRecord): string[] | undefined => {
+    const runtime = runtimesRef.current.get(tab.id)
+
+    if (runtime && !runtime.disposed) {
+      return getPersistedTerminalOutputLines(runtime.terminal)
+    }
+
+    return clonePersistedOutputLines(tab.outputLines)
+  }, [])
+
   const closeSshBrowserForTab = useCallback((tabId: string | null): void => {
     if (!tabId) {
       return
@@ -1885,7 +1942,9 @@ function TerminalApp(): React.JSX.Element {
   }, [])
 
   const initializeTab = useCallback(
-    (tabId: string, hostElement: HTMLDivElement): void => {
+    (tab: TabRecord, hostElement: HTMLDivElement): void => {
+      const tabId = tab.id
+
       if (runtimesRef.current.has(tabId)) {
         return
       }
@@ -1896,6 +1955,7 @@ function TerminalApp(): React.JSX.Element {
       terminal.loadAddon(fitAddon)
       terminal.open(hostElement)
       terminal.options.theme = isSearchOpenRef.current ? searchTerminalTheme : defaultTerminalTheme
+      restorePersistedTerminalOutput(terminal, tab.outputLines)
 
       const runtime: TerminalRuntime = {
         closed: false,
@@ -2107,10 +2167,26 @@ function TerminalApp(): React.JSX.Element {
       return
     }
 
-    void window.api.session.save(createSessionSnapshot(tabs, activeTabId)).catch((error) => {
-      console.error('Unable to persist the current terminal session.', error)
-    })
-  }, [activeTabId, isSessionHydrated, tabs])
+    const handleBeforeUnload = (): void => {
+      void window.api.session
+        .save(
+          createSessionSnapshot(
+            tabsRef.current,
+            activeTabIdRef.current,
+            getTabOutputLinesForSnapshot
+          )
+        )
+        .catch((error) => {
+          console.error('Unable to stage the terminal session before close.', error)
+        })
+    }
+
+    window.addEventListener('beforeunload', handleBeforeUnload)
+
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload)
+    }
+  }, [getTabOutputLinesForSnapshot, isSessionHydrated])
 
   useEffect(() => {
     isUnmountingRef.current = false
@@ -3611,7 +3687,7 @@ function TerminalApp(): React.JSX.Element {
                 }
 
                 hostElementsRef.current.set(tab.id, node)
-                initializeTab(tab.id, node)
+                initializeTab(tab, node)
               }}
               role="tabpanel"
             />

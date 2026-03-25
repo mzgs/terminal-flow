@@ -13,6 +13,7 @@ export type RestorableTabState = LocalRestorableTabState | SshRestorableTabState
 
 export interface SessionTabSnapshot {
   id: string
+  outputLines?: string[]
   restoreState: RestorableTabState
   title: string
 }

@@ -1179,6 +1179,16 @@ function parsePersistedRestorableTabState(value: unknown): RestorableTabState | 
   return null
 }
 
+function parsePersistedOutputLines(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined
+  }
+
+  const outputLines = value.filter((line): line is string => typeof line === 'string').slice(-500)
+
+  return outputLines.length > 0 ? outputLines : undefined
+}
+
 function parsePersistedSessionTab(
   value: unknown,
   seenTabIds: Set<string>
@@ -1199,6 +1209,7 @@ function parsePersistedSessionTab(
   }
 
   const restoreState = parsePersistedRestorableTabState(record.restoreState)
+  const outputLines = parsePersistedOutputLines(record.outputLines)
 
   if (!restoreState) {
     return null
@@ -1208,6 +1219,7 @@ function parsePersistedSessionTab(
 
   return {
     id,
+    ...(outputLines ? { outputLines } : {}),
     restoreState,
     title: record.title.trim() || '~'
   }
@@ -1282,15 +1294,26 @@ function listPersistedSession(): SessionSnapshot | null {
   return persistedSession
 }
 
-function saveSessionSnapshot(snapshot: SessionSnapshot): void {
+function stageSessionSnapshot(snapshot: SessionSnapshot): void {
   const parsedSnapshot = parsePersistedSessionSnapshot(snapshot)
 
   if (!parsedSnapshot) {
     throw new Error('Invalid session snapshot.')
   }
 
-  persistSessionSnapshot(parsedSnapshot)
   persistedSession = parsedSnapshot
+}
+
+function flushStagedSessionSnapshot(): void {
+  if (!persistedSession) {
+    return
+  }
+
+  try {
+    persistSessionSnapshot(persistedSession)
+  } catch (error) {
+    console.error('Unable to flush the staged terminal session.', error)
+  }
 }
 
 function persistSshServers(nextSshServers: SshServerConfig[]): void {
@@ -1578,6 +1601,10 @@ function createMainWindow(): BrowserWindow {
     nextMainWindow.show()
   })
 
+  nextMainWindow.on('closed', () => {
+    flushStagedSessionSnapshot()
+  })
+
   nextMainWindow.webContents.setWindowOpenHandler((details) => {
     shell.openExternal(details.url)
     return { action: 'deny' }
@@ -1682,7 +1709,7 @@ app.whenReady().then(() => {
   ipcMain.handle('shell:open-path', (_event, path: string) => openFolderPath(path))
   ipcMain.handle('session:load', () => listPersistedSession())
   ipcMain.handle('session:save', (_event, snapshot: SessionSnapshot) =>
-    saveSessionSnapshot(snapshot)
+    stageSessionSnapshot(snapshot)
   )
   ipcMain.on('terminal:write', (_event, payload: { terminalId: number; data: string }) => {
     terminals.get(payload.terminalId)?.process.write(payload.data)
@@ -1733,6 +1760,10 @@ app.whenReady().then(() => {
   )
 
   createMainWindow()
+
+  app.on('before-quit', () => {
+    flushStagedSessionSnapshot()
+  })
 
   app.on('activate', function () {
     // On macOS it's common to re-create a window in the app when the
