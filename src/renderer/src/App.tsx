@@ -32,7 +32,8 @@ import type {
   SshAuthMethod,
   SshRemoteDirectoryEntry,
   SshServerConfig,
-  SshServerConfigInput
+  SshServerConfigInput,
+  SshUploadProgressEvent
 } from '../../shared/ssh'
 import type { TerminalCreateOptions, TerminalCreateResult } from '../../shared/terminal'
 
@@ -110,6 +111,8 @@ const minTerminalStageWidth = 320
 const sshBrowserOverlayBreakpointPx = 900
 const sshBrowserResizerWidth = 10
 const sshRemoteCwdSequencePrefix = '\x1b]633;TerminalRemoteCwd='
+const uploadProgressCircleRadius = 16
+const uploadProgressCircleCircumference = 2 * Math.PI * uploadProgressCircleRadius
 const sshRemoteCwdPattern = new RegExp(
   String.raw`\x1b]633;TerminalRemoteCwd=([^\x07\x1b]*)(?:\x07|\x1b\\)`,
   'g'
@@ -1235,6 +1238,7 @@ function TerminalApp(): React.JSX.Element {
   const [sshBrowserWidths, setSshBrowserWidths] = useState<SshBrowserWidths>({})
   const [sshBrowserContextMenu, setSshBrowserContextMenu] =
     useState<SshBrowserContextMenuState | null>(null)
+  const [sshUploadProgress, setSshUploadProgress] = useState<SshUploadProgressEvent | null>(null)
   const [isSshConfigDialogOpen, setIsSshConfigDialogOpen] = useState(false)
   const [sshServerBeingEdited, setSshServerBeingEdited] = useState<SshServerConfig | null>(null)
   const [sshServers, setSshServers] = useState<SshServerConfig[]>([])
@@ -1258,6 +1262,7 @@ function TerminalApp(): React.JSX.Element {
   const sshBrowserResizePointerIdRef = useRef<number | null>(null)
   const sshBrowserResizeTabIdRef = useRef<string | null>(null)
   const sshBrowserRequestIdRef = useRef(0)
+  const sshUploadHideTimeoutRef = useRef<number | null>(null)
   const sshCwdSequenceBuffersRef = useRef(new Map<number, string>())
   const terminalToTabRef = useRef(new Map<number, string>())
   const pendingTitlesRef = useRef(new Map<number, string>())
@@ -3104,6 +3109,42 @@ function TerminalApp(): React.JSX.Element {
   }, [])
 
   useEffect(() => {
+    const disposeUploadProgress = window.api.ssh.onUploadProgress((event) => {
+      if (sshUploadHideTimeoutRef.current !== null) {
+        window.clearTimeout(sshUploadHideTimeoutRef.current)
+        sshUploadHideTimeoutRef.current = null
+      }
+
+      if (event.status === 'failed') {
+        setSshUploadProgress((currentProgress) =>
+          currentProgress?.uploadId === event.uploadId ? null : currentProgress
+        )
+        return
+      }
+
+      setSshUploadProgress(event)
+
+      if (event.status === 'completed') {
+        sshUploadHideTimeoutRef.current = window.setTimeout(() => {
+          setSshUploadProgress((currentProgress) =>
+            currentProgress?.uploadId === event.uploadId ? null : currentProgress
+          )
+          sshUploadHideTimeoutRef.current = null
+        }, 700)
+      }
+    })
+
+    return () => {
+      if (sshUploadHideTimeoutRef.current !== null) {
+        window.clearTimeout(sshUploadHideTimeoutRef.current)
+        sshUploadHideTimeoutRef.current = null
+      }
+
+      disposeUploadProgress()
+    }
+  }, [])
+
+  useEffect(() => {
     const preventWindowFileDrop = (event: DragEvent): void => {
       if (!shouldHandleFileDrop(event.dataTransfer)) {
         return
@@ -3129,6 +3170,16 @@ function TerminalApp(): React.JSX.Element {
         : searchResultIndex >= 0
           ? `${searchResultIndex + 1}/${searchResultCount}`
           : `${searchResultCount} matches`
+  const uploadProgressPercent = sshUploadProgress ? Math.round(sshUploadProgress.percent) : 0
+  const uploadProgressOffset =
+    uploadProgressCircleCircumference -
+    (uploadProgressCircleCircumference * uploadProgressPercent) / 100
+  const uploadProgressRingStyle: CSSProperties | undefined = sshUploadProgress
+    ? {
+        strokeDasharray: uploadProgressCircleCircumference,
+        strokeDashoffset: uploadProgressOffset
+      }
+    : undefined
 
   return (
     <main className={`app-shell ${platformClassName}`}>
@@ -3170,6 +3221,24 @@ function TerminalApp(): React.JSX.Element {
         </div>
         <div aria-hidden="true" className="window-drag-spacer" />
         <div className="tab-actions">
+          {sshUploadProgress ? (
+            <div
+              aria-label={`Upload progress ${uploadProgressPercent}%`}
+              className="window-upload-progress"
+              title={`Uploading to ${sshUploadProgress.targetPath}: ${uploadProgressPercent}%`}
+            >
+              <svg aria-hidden="true" className="window-upload-progress-ring" viewBox="0 0 40 40">
+                <circle className="window-upload-progress-track" cx="20" cy="20" r="16" />
+                <circle
+                  className="window-upload-progress-value"
+                  cx="20"
+                  cy="20"
+                  r="16"
+                  style={uploadProgressRingStyle}
+                />
+              </svg>
+            </div>
+          ) : null}
           <button
             aria-label="Create a new tab"
             className="tab-action"

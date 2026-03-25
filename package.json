@@ -28,7 +28,8 @@
     "lucide-react": "^1.6.0",
     "motion": "^12.38.0",
     "node-pty": "^1.1.0",
-    "react-modal": "^3.16.3"
+    "react-modal": "^3.16.3",
+    "ssh2-sftp-client": "^12.1.1"
   },
   "devDependencies": {
     "@electron-toolkit/eslint-config-prettier": "^3.0.0",
@@ -38,6 +39,7 @@
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
     "@types/react-modal": "^3.16.3",
+    "@types/ssh2-sftp-client": "^9.0.6",
     "@vitejs/plugin-react": "^5.1.1",
     "electron": "^39.2.6",
     "electron-builder": "^26.0.12",

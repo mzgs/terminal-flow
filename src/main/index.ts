@@ -7,6 +7,7 @@ import {
   constants,
   existsSync,
   mkdirSync,
+  readdirSync,
   readFileSync,
   statSync,
   writeFileSync
@@ -14,6 +15,8 @@ import {
 import { basename, dirname, join, parse } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { spawn, type IPty } from 'node-pty'
+import SftpClient from 'ssh2-sftp-client'
+import type { ConnectConfig } from 'ssh2'
 import icon from '../../resources/icon.png?asset'
 import type { RestorableTabState, SessionSnapshot, SessionTabSnapshot } from '../shared/session'
 import type {
@@ -21,7 +24,9 @@ import type {
   SshRemoteDirectoryListing,
   SshServerConfig,
   SshServerConfigInput,
-  SshServerConfigSaveInput
+  SshServerConfigSaveInput,
+  SshUploadProgressEvent,
+  SshUploadProgressStatus
 } from '../shared/ssh'
 import type { TerminalCreateOptions, TerminalCreateResult } from '../shared/terminal'
 
@@ -40,6 +45,18 @@ interface TerminalSpawnResult {
   shellName: string
   title: string
   trackCwd: boolean
+}
+
+interface SshUploadPlanFile {
+  localPath: string
+  remotePath: string
+  size: number
+}
+
+interface SshUploadPlan {
+  directories: string[]
+  files: SshUploadPlanFile[]
+  totalBytes: number
 }
 
 const terminals = new Map<number, TerminalSession>()
@@ -658,6 +675,195 @@ function buildScpBaseArgs(config: SshServerConfig): string[] {
   return args
 }
 
+function trimTrailingPathSeparators(value: string): string {
+  const trimmedValue = value.replace(/[\\/]+$/, '')
+  return trimmedValue === '' ? value : trimmedValue
+}
+
+function normalizeRemoteDirectoryPath(path: string): string {
+  const trimmedPath = path.trim()
+
+  if (trimmedPath === '' || trimmedPath === '/') {
+    return '/'
+  }
+
+  return trimmedPath.replace(/\/+$/, '') || '/'
+}
+
+function joinRemoteUploadPath(basePath: string, name: string): string {
+  const normalizedBasePath = normalizeRemoteDirectoryPath(basePath)
+  return normalizedBasePath === '/' ? `/${name}` : `${normalizedBasePath}/${name}`
+}
+
+function getDefaultSshPrivateKeyPath(): string | null {
+  const sshDirectoryPath = join(app.getPath('home'), '.ssh')
+  const privateKeyCandidates = [
+    'id_ed25519',
+    'id_ecdsa',
+    'id_rsa',
+    'id_dsa',
+    'id_xmss',
+    'id_ecdsa_sk',
+    'id_ed25519_sk'
+  ]
+
+  for (const fileName of privateKeyCandidates) {
+    const candidatePath = join(sshDirectoryPath, fileName)
+
+    if (existsSync(candidatePath)) {
+      return candidatePath
+    }
+  }
+
+  return null
+}
+
+function buildSftpConnectOptions(config: SshServerConfig, password: string | null): ConnectConfig {
+  const connectOptions: ConnectConfig = {
+    host: config.host,
+    port: config.port,
+    readyTimeout: 20_000,
+    username: config.username
+  }
+
+  if (config.authMethod === 'password') {
+    if (!password) {
+      throw new Error('Password-based SSH upload requires a password.')
+    }
+
+    return {
+      ...connectOptions,
+      password
+    }
+  }
+
+  const privateKeyPath = config.privateKeyPath.trim() || getDefaultSshPrivateKeyPath()
+
+  if (privateKeyPath) {
+    return {
+      ...connectOptions,
+      privateKey: readFileSync(privateKeyPath)
+    }
+  }
+
+  if (process.env['SSH_AUTH_SOCK']) {
+    return {
+      ...connectOptions,
+      agent: process.env['SSH_AUTH_SOCK']
+    }
+  }
+
+  throw new Error('No SSH private key is available for upload.')
+}
+
+function collectSshUploadPlanEntries(
+  localPath: string,
+  remotePath: string,
+  directories: Set<string>,
+  files: SshUploadPlanFile[]
+): void {
+  const stats = statSync(localPath)
+
+  if (stats.isDirectory()) {
+    directories.add(remotePath)
+
+    for (const childName of readdirSync(localPath).sort((left, right) =>
+      left.localeCompare(right)
+    )) {
+      collectSshUploadPlanEntries(
+        join(localPath, childName),
+        joinRemoteUploadPath(remotePath, childName),
+        directories,
+        files
+      )
+    }
+
+    return
+  }
+
+  if (stats.isFile()) {
+    files.push({
+      localPath,
+      remotePath,
+      size: stats.size
+    })
+    return
+  }
+
+  throw new Error(`Only files and folders can be uploaded: ${localPath}`)
+}
+
+function collectSshUploadPlan(localPaths: string[], targetPath: string): SshUploadPlan {
+  const directories = new Set<string>()
+  const files: SshUploadPlanFile[] = []
+
+  for (const localPath of localPaths) {
+    const normalizedLocalPath = trimTrailingPathSeparators(localPath)
+    const remoteRootPath = joinRemoteUploadPath(
+      targetPath,
+      basename(normalizedLocalPath) || basename(localPath)
+    )
+
+    collectSshUploadPlanEntries(normalizedLocalPath, remoteRootPath, directories, files)
+  }
+
+  return {
+    directories: Array.from(directories).sort((left, right) => left.length - right.length),
+    files,
+    totalBytes: files.reduce((totalSize, file) => totalSize + file.size, 0)
+  }
+}
+
+function emitSshUploadProgress(webContents: WebContents, payload: SshUploadProgressEvent): void {
+  if (!webContents.isDestroyed()) {
+    webContents.send('ssh:upload-progress', payload)
+  }
+}
+
+function createSshUploadProgressEmitter(
+  webContents: WebContents,
+  uploadId: string,
+  targetPath: string,
+  totalBytes: number
+): (
+  status: SshUploadProgressStatus,
+  transferredBytes: number,
+  currentPath?: string | null
+) => void {
+  let lastPercent = -1
+  let lastStatus: SshUploadProgressStatus | null = null
+  let lastPath: string | null = null
+
+  return (status, transferredBytes, currentPath = null) => {
+    const normalizedTransferredBytes =
+      totalBytes <= 0 ? 0 : Math.min(Math.max(0, transferredBytes), totalBytes)
+    const percent =
+      totalBytes <= 0
+        ? status === 'completed'
+          ? 100
+          : 0
+        : Math.round((normalizedTransferredBytes / totalBytes) * 100)
+
+    if (status === lastStatus && percent === lastPercent && currentPath === lastPath) {
+      return
+    }
+
+    lastStatus = status
+    lastPercent = percent
+    lastPath = currentPath
+
+    emitSshUploadProgress(webContents, {
+      currentPath,
+      percent,
+      status,
+      targetPath,
+      totalBytes,
+      transferredBytes: status === 'completed' ? totalBytes : normalizedTransferredBytes,
+      uploadId
+    })
+  }
+}
+
 function buildInteractiveSshRemoteCommand(cwd?: string): string {
   const scriptLines = [
     'shell_path=${SHELL:-/bin/sh}',
@@ -804,42 +1010,64 @@ function runScpCommand(
   })
 }
 
-function runScpUploadCommand(
+async function runSftpUploadCommand(
+  webContents: WebContents,
   config: SshServerConfig,
   password: string | null,
   localPaths: string[],
-  remotePath: string,
-  isRecursive: boolean
+  remotePath: string
 ): Promise<void> {
-  const scpEnv = getSshCommandEnv(password, true)
-  const commandEnv = scpEnv ? { ...process.env, ...scpEnv } : process.env
-  const args = buildScpBaseArgs(config)
+  const normalizedRemotePath = normalizeRemoteDirectoryPath(remotePath)
+  const uploadPlan = collectSshUploadPlan(localPaths, normalizedRemotePath)
+  const uploadId = randomUUID()
+  const emitProgress = createSshUploadProgressEmitter(
+    webContents,
+    uploadId,
+    normalizedRemotePath,
+    uploadPlan.totalBytes
+  )
+  const sftpClient = new SftpClient('terminal-upload')
+  let transferredBytes = 0
 
-  if (isRecursive) {
-    args.push('-r')
-  }
+  emitProgress('running', 0)
 
-  args.push(...localPaths, `${config.username}@${config.host}:${remotePath}`)
+  try {
+    await sftpClient.connect(buildSftpConnectOptions(config, password))
 
-  return new Promise((resolve, reject) => {
-    execFile(
-      'scp',
-      args,
-      {
-        encoding: 'utf8',
-        env: commandEnv
-      },
-      (error, stdout, stderr) => {
-        if (!error) {
-          resolve()
-          return
+    const targetPathType = await sftpClient.exists(normalizedRemotePath)
+
+    if (targetPathType !== 'd') {
+      throw new Error('Remote target folder was not found.')
+    }
+
+    for (const directoryPath of uploadPlan.directories) {
+      await sftpClient.mkdir(directoryPath, true)
+    }
+
+    for (const file of uploadPlan.files) {
+      emitProgress('running', transferredBytes, file.localPath)
+
+      await sftpClient.fastPut(file.localPath, file.remotePath, {
+        step: (totalTransferred, _chunk, total) => {
+          const fileTotalBytes = total > 0 ? total : file.size
+          const nextTransferredBytes =
+            transferredBytes + Math.min(file.size, Math.min(fileTotalBytes, totalTransferred))
+
+          emitProgress('running', nextTransferredBytes, file.localPath)
         }
+      })
 
-        const message = stderr.trim() || stdout.trim() || error.message
-        reject(new Error(message))
-      }
-    )
-  })
+      transferredBytes += file.size
+      emitProgress('running', transferredBytes, file.localPath)
+    }
+
+    emitProgress('completed', uploadPlan.totalBytes, uploadPlan.files.at(-1)?.localPath ?? null)
+  } catch (error) {
+    emitProgress('failed', transferredBytes)
+    throw error
+  } finally {
+    await sftpClient.end().catch(() => false)
+  }
 }
 
 function getUniqueDownloadPath(path: string): string {
@@ -1227,6 +1455,7 @@ async function downloadSshPath(
 }
 
 async function uploadSshPaths(
+  webContents: WebContents,
   configId: string,
   targetPath: string,
   localPaths: string[]
@@ -1251,8 +1480,6 @@ async function uploadSshPaths(
     throw new Error('Add at least one local file to upload.')
   }
 
-  let isRecursive = false
-
   for (const localPath of normalizedLocalPaths) {
     let stats
 
@@ -1263,7 +1490,6 @@ async function uploadSshPaths(
     }
 
     if (stats.isDirectory()) {
-      isRecursive = true
       continue
     }
 
@@ -1276,12 +1502,12 @@ async function uploadSshPaths(
 
   const password = config.authMethod === 'password' ? decryptSshPassword(config.password) : null
 
-  await runScpUploadCommand(
+  await runSftpUploadCommand(
+    webContents,
     config,
     password,
     normalizedLocalPaths,
-    normalizedTargetPath,
-    isRecursive
+    normalizedTargetPath
   )
 }
 
@@ -1488,8 +1714,8 @@ app.whenReady().then(() => {
   )
   ipcMain.handle(
     'ssh:upload-paths',
-    (_event, payload: { configId: string; localPaths: string[]; targetPath: string }) =>
-      uploadSshPaths(payload.configId, payload.targetPath, payload.localPaths)
+    (event, payload: { configId: string; localPaths: string[]; targetPath: string }) =>
+      uploadSshPaths(event.sender, payload.configId, payload.targetPath, payload.localPaths)
   )
   ipcMain.handle('ssh:save-config', (event, payload: SshServerConfigSaveInput) =>
     submitSshConfig(event.sender, payload)

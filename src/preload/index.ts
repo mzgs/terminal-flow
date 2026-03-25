@@ -2,7 +2,12 @@ import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 import type { SessionApi } from '../shared/session'
 import type { ShellApi } from '../shared/shell'
-import type { SshApi, SshRemoteDirectoryListing, SshServerConfig } from '../shared/ssh'
+import type {
+  SshApi,
+  SshRemoteDirectoryListing,
+  SshServerConfig,
+  SshUploadProgressEvent
+} from '../shared/ssh'
 import type {
   TerminalApi,
   TerminalCreateOptions,
@@ -94,6 +99,17 @@ const ssh: SshApi = {
       path
     }) as Promise<SshRemoteDirectoryListing>,
   listConfigs: () => ipcRenderer.invoke('ssh:list-configs'),
+  onUploadProgress: (callback) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: SshUploadProgressEvent): void => {
+      callback(payload)
+    }
+
+    ipcRenderer.on('ssh:upload-progress', listener)
+
+    return () => {
+      ipcRenderer.off('ssh:upload-progress', listener)
+    }
+  },
   renamePath: (configId, path, nextPath) =>
     ipcRenderer.invoke('ssh:rename-path', {
       configId,
