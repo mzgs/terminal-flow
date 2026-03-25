@@ -1,4 +1,5 @@
 import { ElectronAPI } from '@electron-toolkit/preload'
+import type { ClipboardApi } from '../shared/clipboard'
 import type { SessionApi } from '../shared/session'
 import type { ShellApi } from '../shared/shell'
 import type { SshApi } from '../shared/ssh'
@@ -12,6 +13,7 @@ declare global {
   interface Window {
     electron: ElectronAPI
     api: {
+      clipboard: ClipboardApi
       session: SessionApi
       shell: ShellApi
       ssh: SshApi

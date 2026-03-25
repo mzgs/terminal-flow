@@ -5,6 +5,8 @@ import {
   Check,
   ChevronDown,
   ChevronUp,
+  ClipboardCopy,
+  ClipboardPaste,
   Download,
   File,
   FileArchive,
@@ -21,6 +23,7 @@ import {
   Plus,
   Search,
   Server,
+  TextSelect,
   Trash2,
   X
 } from 'lucide-react'
@@ -93,6 +96,13 @@ type SshBrowserWidths = Record<string, number>
 
 interface SshBrowserContextMenuState {
   entry: SshRemoteDirectoryEntry
+  tabId: string
+  x: number
+  y: number
+}
+
+interface TerminalContextMenuState {
+  hasSelection: boolean
   tabId: string
   x: number
   y: number
@@ -1245,6 +1255,9 @@ function TerminalApp(): React.JSX.Element {
   const [isSshBrowserResizing, setIsSshBrowserResizing] = useState(false)
   const [sshBrowserStates, setSshBrowserStates] = useState<SshBrowserStates>({})
   const [sshBrowserWidths, setSshBrowserWidths] = useState<SshBrowserWidths>({})
+  const [terminalContextMenu, setTerminalContextMenu] = useState<TerminalContextMenuState | null>(
+    null
+  )
   const [sshBrowserContextMenu, setSshBrowserContextMenu] =
     useState<SshBrowserContextMenuState | null>(null)
   const [sshUploadProgress, setSshUploadProgress] = useState<SshUploadProgressEvent | null>(null)
@@ -1256,6 +1269,7 @@ function TerminalApp(): React.JSX.Element {
   const workspaceShellRef = useRef<HTMLElement>(null)
   const tabStripRef = useRef<HTMLDivElement>(null)
   const sshMenuRef = useRef<HTMLDivElement>(null)
+  const terminalContextMenuRef = useRef<HTMLDivElement>(null)
   const sshBrowserContextMenuRef = useRef<HTMLDivElement>(null)
   const tabsRef = useRef<TabRecord[]>([])
   const sshBrowserStatesRef = useRef<SshBrowserStates>({})
@@ -1344,6 +1358,10 @@ function TerminalApp(): React.JSX.Element {
 
   const closeSshBrowserContextMenu = useCallback((): void => {
     setSshBrowserContextMenu(null)
+  }, [])
+
+  const closeTerminalContextMenu = useCallback((): void => {
+    setTerminalContextMenu(null)
   }, [])
 
   const updateSshBrowserState = useCallback(
@@ -2376,6 +2394,11 @@ function TerminalApp(): React.JSX.Element {
         return
       }
 
+      if (terminalContextMenu) {
+        closeTerminalContextMenu()
+        return
+      }
+
       if (sshBrowserContextMenu) {
         closeSshBrowserContextMenu()
         return
@@ -2391,11 +2414,56 @@ function TerminalApp(): React.JSX.Element {
     }
   }, [
     activeTabId,
+    closeTerminalContextMenu,
     closeSshBrowserContextMenu,
     closeSshBrowserForTab,
     sshBrowserContextMenu,
-    sshBrowserStates
+    sshBrowserStates,
+    terminalContextMenu
   ])
+
+  useEffect(() => {
+    if (!terminalContextMenu) {
+      return
+    }
+
+    const handlePointerDown = (event: PointerEvent): void => {
+      if (terminalContextMenuRef.current?.contains(event.target as Node)) {
+        return
+      }
+
+      closeTerminalContextMenu()
+    }
+
+    const handleKeyDown = (event: KeyboardEvent): void => {
+      if (event.key !== 'Escape') {
+        return
+      }
+
+      closeTerminalContextMenu()
+    }
+
+    window.addEventListener('pointerdown', handlePointerDown, { capture: true })
+    window.addEventListener('keydown', handleKeyDown, { capture: true })
+
+    return () => {
+      window.removeEventListener('pointerdown', handlePointerDown, { capture: true })
+      window.removeEventListener('keydown', handleKeyDown, { capture: true })
+    }
+  }, [closeTerminalContextMenu, terminalContextMenu])
+
+  useEffect(() => {
+    if (!terminalContextMenu) {
+      return
+    }
+
+    if (
+      activeTabId !== terminalContextMenu.tabId ||
+      !runtimesRef.current.has(terminalContextMenu.tabId)
+    ) {
+      closeTerminalContextMenu()
+    }
+  }, [activeTabId, closeTerminalContextMenu, terminalContextMenu, tabs])
 
   useEffect(() => {
     if (!sshBrowserContextMenu) {
@@ -2840,6 +2908,90 @@ function TerminalApp(): React.JSX.Element {
     []
   )
 
+  const handleOpenTerminalContextMenu = useCallback(
+    (event: React.MouseEvent<HTMLDivElement>, tabId: string): void => {
+      const runtime = runtimesRef.current.get(tabId)
+
+      if (!runtime || runtime.disposed) {
+        return
+      }
+
+      event.preventDefault()
+      event.stopPropagation()
+
+      const menuPadding = 12
+      const menuWidth = 296
+      const menuHeight = 220
+      const maxX = Math.max(menuPadding, window.innerWidth - menuWidth - menuPadding)
+      const maxY = Math.max(menuPadding, window.innerHeight - menuHeight - menuPadding)
+
+      setTerminalContextMenu({
+        hasSelection: runtime.terminal.hasSelection(),
+        tabId,
+        x: Math.min(Math.max(event.clientX, menuPadding), maxX),
+        y: Math.min(Math.max(event.clientY, menuPadding), maxY)
+      })
+    },
+    []
+  )
+
+  const handleCopyTerminalSelection = useCallback((): void => {
+    const currentMenu = terminalContextMenu
+
+    if (!currentMenu) {
+      return
+    }
+
+    const runtime = runtimesRef.current.get(currentMenu.tabId)
+
+    if (!runtime || runtime.disposed || !runtime.terminal.hasSelection()) {
+      closeTerminalContextMenu()
+      return
+    }
+
+    window.api.clipboard.writeText(runtime.terminal.getSelection())
+    runtime.terminal.focus()
+    closeTerminalContextMenu()
+  }, [closeTerminalContextMenu, terminalContextMenu])
+
+  const handlePasteIntoTerminal = useCallback((): void => {
+    const currentMenu = terminalContextMenu
+
+    if (!currentMenu) {
+      return
+    }
+
+    const runtime = runtimesRef.current.get(currentMenu.tabId)
+
+    if (!runtime || runtime.disposed) {
+      closeTerminalContextMenu()
+      return
+    }
+
+    runtime.terminal.focus()
+    runtime.terminal.paste(window.api.clipboard.readText())
+    closeTerminalContextMenu()
+  }, [closeTerminalContextMenu, terminalContextMenu])
+
+  const handleSelectAllTerminalContent = useCallback((): void => {
+    const currentMenu = terminalContextMenu
+
+    if (!currentMenu) {
+      return
+    }
+
+    const runtime = runtimesRef.current.get(currentMenu.tabId)
+
+    if (!runtime || runtime.disposed) {
+      closeTerminalContextMenu()
+      return
+    }
+
+    runtime.terminal.focus()
+    runtime.terminal.selectAll()
+    closeTerminalContextMenu()
+  }, [closeTerminalContextMenu, terminalContextMenu])
+
   const handleDeleteSshBrowserEntry = useCallback(
     (browserState: SshBrowserState, entry: SshRemoteDirectoryEntry): void => {
       if (!browserState.path || browserState.isLoading) {
@@ -3248,11 +3400,7 @@ function TerminalApp(): React.JSX.Element {
               {isUploadCompleted ? (
                 <Check aria-hidden="true" className="window-upload-success-icon" />
               ) : (
-                <svg
-                  aria-hidden="true"
-                  className="window-upload-progress-ring"
-                  viewBox="0 0 40 40"
-                >
+                <svg aria-hidden="true" className="window-upload-progress-ring" viewBox="0 0 40 40">
                   <circle className="window-upload-progress-track" cx="20" cy="20" r="16" />
                   <circle
                     className="window-upload-progress-value"
@@ -3429,6 +3577,7 @@ function TerminalApp(): React.JSX.Element {
               className={`terminal-screen${tab.id === activeTabId ? ' is-active' : ''}`}
               id={`panel-${tab.id}`}
               key={tab.id}
+              onContextMenu={(event) => handleOpenTerminalContextMenu(event, tab.id)}
               ref={(node) => {
                 if (!node) {
                   hostElementsRef.current.delete(tab.id)
@@ -3442,6 +3591,52 @@ function TerminalApp(): React.JSX.Element {
             />
           ))}
         </div>
+        {terminalContextMenu ? (
+          <div
+            className="terminal-context-menu"
+            ref={terminalContextMenuRef}
+            role="menu"
+            style={{
+              left: terminalContextMenu.x,
+              top: terminalContextMenu.y
+            }}
+          >
+            <button
+              className="terminal-context-menu-item"
+              disabled={!terminalContextMenu.hasSelection}
+              onClick={handleCopyTerminalSelection}
+              role="menuitem"
+              type="button"
+            >
+              <span className="terminal-context-menu-item-icon-shell">
+                <ClipboardCopy aria-hidden="true" className="terminal-context-menu-icon" />
+              </span>
+              <span className="terminal-context-menu-label">Copy</span>
+            </button>
+            <button
+              className="terminal-context-menu-item"
+              onClick={handlePasteIntoTerminal}
+              role="menuitem"
+              type="button"
+            >
+              <span className="terminal-context-menu-item-icon-shell">
+                <ClipboardPaste aria-hidden="true" className="terminal-context-menu-icon" />
+              </span>
+              <span className="terminal-context-menu-label">Paste</span>
+            </button>
+            <button
+              className="terminal-context-menu-item"
+              onClick={handleSelectAllTerminalContent}
+              role="menuitem"
+              type="button"
+            >
+              <span className="terminal-context-menu-item-icon-shell">
+                <TextSelect aria-hidden="true" className="terminal-context-menu-icon" />
+              </span>
+              <span className="terminal-context-menu-label">Select All</span>
+            </button>
+          </div>
+        ) : null}
         {activeSshBrowserState ? (
           <div
             aria-controls={activeSshBrowserId}

@@ -1,5 +1,6 @@
-import { contextBridge, ipcRenderer, webUtils } from 'electron'
+import { clipboard, contextBridge, ipcRenderer, webUtils } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
+import type { ClipboardApi } from '../shared/clipboard'
 import type { SessionApi } from '../shared/session'
 import type { ShellApi } from '../shared/shell'
 import type {
@@ -78,6 +79,11 @@ const shell: ShellApi = {
   openPath: (path) => ipcRenderer.invoke('shell:open-path', path)
 }
 
+const clipboardApi: ClipboardApi = {
+  readText: () => clipboard.readText(),
+  writeText: (text) => clipboard.writeText(text)
+}
+
 const ssh: SshApi = {
   connect: (configId, cwd) => ipcRenderer.invoke('ssh:connect', { configId, cwd }),
   deleteConfig: (configId) => ipcRenderer.invoke('ssh:delete-config', configId),
@@ -148,6 +154,7 @@ const ssh: SshApi = {
 }
 
 const api = {
+  clipboard: clipboardApi,
   session,
   shell,
   ssh,
