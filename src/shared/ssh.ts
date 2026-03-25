@@ -42,4 +42,5 @@ export interface SshApi {
   onConfigDeleted: (callback: (configId: string) => void) => () => void
   renamePath: (configId: string, path: string, nextPath: string) => Promise<void>
   saveConfig: (config: SshServerConfigSaveInput) => Promise<void>
+  uploadPaths: (configId: string, targetPath: string, localPaths: string[]) => Promise<void>
 }

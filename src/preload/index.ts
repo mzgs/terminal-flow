@@ -101,6 +101,12 @@ const ssh: SshApi = {
       path
     }),
   saveConfig: (config) => ipcRenderer.invoke('ssh:save-config', config),
+  uploadPaths: (configId, targetPath, localPaths) =>
+    ipcRenderer.invoke('ssh:upload-paths', {
+      configId,
+      localPaths,
+      targetPath
+    }),
   onConfigAdded: (callback) => {
     const listener = (_event: Electron.IpcRendererEvent, payload: SshServerConfig): void => {
       callback(payload)

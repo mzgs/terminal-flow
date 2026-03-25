@@ -804,6 +804,44 @@ function runScpCommand(
   })
 }
 
+function runScpUploadCommand(
+  config: SshServerConfig,
+  password: string | null,
+  localPaths: string[],
+  remotePath: string,
+  isRecursive: boolean
+): Promise<void> {
+  const scpEnv = getSshCommandEnv(password, true)
+  const commandEnv = scpEnv ? { ...process.env, ...scpEnv } : process.env
+  const args = buildScpBaseArgs(config)
+
+  if (isRecursive) {
+    args.push('-r')
+  }
+
+  args.push(...localPaths, `${config.username}@${config.host}:${remotePath}`)
+
+  return new Promise((resolve, reject) => {
+    execFile(
+      'scp',
+      args,
+      {
+        encoding: 'utf8',
+        env: commandEnv
+      },
+      (error, stdout, stderr) => {
+        if (!error) {
+          resolve()
+          return
+        }
+
+        const message = stderr.trim() || stdout.trim() || error.message
+        reject(new Error(message))
+      }
+    )
+  })
+}
+
 function getUniqueDownloadPath(path: string): string {
   if (!existsSync(path)) {
     return path
@@ -1188,6 +1226,65 @@ async function downloadSshPath(
   return targetPath
 }
 
+async function uploadSshPaths(
+  configId: string,
+  targetPath: string,
+  localPaths: string[]
+): Promise<void> {
+  const config = sshServers.find((server) => server.id === configId)
+
+  if (!config) {
+    throw new Error('SSH server config not found.')
+  }
+
+  const normalizedTargetPath = targetPath.trim()
+
+  if (normalizedTargetPath === '') {
+    throw new Error('Remote target path is required.')
+  }
+
+  const normalizedLocalPaths = Array.from(
+    new Set(localPaths.map((localPath) => localPath.trim()).filter((localPath) => localPath !== ''))
+  )
+
+  if (normalizedLocalPaths.length === 0) {
+    throw new Error('Add at least one local file to upload.')
+  }
+
+  let isRecursive = false
+
+  for (const localPath of normalizedLocalPaths) {
+    let stats
+
+    try {
+      stats = statSync(localPath)
+    } catch {
+      throw new Error(`Local path not found: ${localPath}`)
+    }
+
+    if (stats.isDirectory()) {
+      isRecursive = true
+      continue
+    }
+
+    if (stats.isFile()) {
+      continue
+    }
+
+    throw new Error(`Only files and folders can be uploaded: ${localPath}`)
+  }
+
+  const password = config.authMethod === 'password' ? decryptSshPassword(config.password) : null
+
+  await runScpUploadCommand(
+    config,
+    password,
+    normalizedLocalPaths,
+    normalizedTargetPath,
+    isRecursive
+  )
+}
+
 async function openFolderPath(path: string): Promise<void> {
   const normalizedPath = path.trim()
 
@@ -1388,6 +1485,11 @@ app.whenReady().then(() => {
     'ssh:rename-path',
     (_event, payload: { configId: string; nextPath: string; path: string }) =>
       renameSshPath(payload.configId, payload.path, payload.nextPath)
+  )
+  ipcMain.handle(
+    'ssh:upload-paths',
+    (_event, payload: { configId: string; localPaths: string[]; targetPath: string }) =>
+      uploadSshPaths(payload.configId, payload.targetPath, payload.localPaths)
   )
   ipcMain.handle('ssh:save-config', (event, payload: SshServerConfigSaveInput) =>
     submitSshConfig(event.sender, payload)

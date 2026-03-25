@@ -1245,6 +1245,7 @@ function TerminalApp(): React.JSX.Element {
   const sshMenuRef = useRef<HTMLDivElement>(null)
   const sshBrowserContextMenuRef = useRef<HTMLDivElement>(null)
   const tabsRef = useRef<TabRecord[]>([])
+  const sshBrowserStatesRef = useRef<SshBrowserStates>({})
   const activeTabIdRef = useRef<string | null>(null)
   const isSearchOpenRef = useRef(false)
   const hostElementsRef = useRef(new Map<string, HTMLDivElement>())
@@ -1332,10 +1333,7 @@ function TerminalApp(): React.JSX.Element {
   }, [])
 
   const updateSshBrowserState = useCallback(
-    (
-      tabId: string,
-      updater: (browserState: SshBrowserState) => SshBrowserState
-    ): void => {
+    (tabId: string, updater: (browserState: SshBrowserState) => SshBrowserState): void => {
       setSshBrowserStates((currentStates) => {
         const currentState = currentStates[tabId]
 
@@ -1986,6 +1984,10 @@ function TerminalApp(): React.JSX.Element {
   }, [tabs])
 
   useEffect(() => {
+    sshBrowserStatesRef.current = sshBrowserStates
+  }, [sshBrowserStates])
+
+  useEffect(() => {
     activeTabIdRef.current = activeTabId
   }, [activeTabId])
 
@@ -2512,6 +2514,94 @@ function TerminalApp(): React.JSX.Element {
     runtime.terminal.focus()
   }, [])
 
+  const writeTerminalStatusToTab = useCallback((tabId: string, message: string): void => {
+    const runtime = runtimesRef.current.get(tabId)
+
+    if (!runtime || runtime.closed || runtime.disposed) {
+      return
+    }
+
+    runtime.terminal.write(`\r\n${message}\r\n`)
+    runtime.terminal.focus()
+  }, [])
+
+  const uploadDroppedPathsToActiveSshTab = useCallback(
+    (paths: string[]): void => {
+      if (paths.length === 0) {
+        return
+      }
+
+      const currentActiveTabId = activeTabIdRef.current
+
+      if (!currentActiveTabId) {
+        return
+      }
+
+      const activeTab = tabsRef.current.find((tab) => tab.id === currentActiveTabId)
+
+      if (!activeTab || activeTab.restoreState.kind !== 'ssh') {
+        return
+      }
+
+      const browserState = sshBrowserStatesRef.current[currentActiveTabId]
+      const targetPath = (activeTab.restoreState.cwd ?? browserState?.path ?? '').trim()
+
+      if (targetPath === '') {
+        const message = 'Unable to upload: remote working directory is not available yet.'
+
+        if (browserState) {
+          updateSshBrowserState(currentActiveTabId, (currentState) => ({
+            ...currentState,
+            errorMessage: message,
+            isLoading: false
+          }))
+        }
+
+        writeTerminalStatusToTab(currentActiveTabId, message)
+        return
+      }
+
+      if (browserState?.path === targetPath) {
+        updateSshBrowserState(currentActiveTabId, (currentState) => ({
+          ...currentState,
+          errorMessage: null,
+          isLoading: true
+        }))
+      }
+
+      void window.api.ssh
+        .uploadPaths(activeTab.restoreState.configId, targetPath, paths)
+        .then(() => {
+          const nextBrowserState = sshBrowserStatesRef.current[currentActiveTabId]
+
+          if (nextBrowserState?.path === targetPath) {
+            loadSshDirectory(nextBrowserState.configId, targetPath, currentActiveTabId)
+          } else if (browserState?.path === targetPath) {
+            updateSshBrowserState(currentActiveTabId, (currentState) => ({
+              ...currentState,
+              errorMessage: null,
+              isLoading: false
+            }))
+          }
+        })
+        .catch((error) => {
+          const message = error instanceof Error ? error.message : String(error)
+          const fallbackMessage = message || 'Unable to upload the dropped files.'
+
+          if (browserState?.path === targetPath) {
+            updateSshBrowserState(currentActiveTabId, (currentState) => ({
+              ...currentState,
+              errorMessage: fallbackMessage,
+              isLoading: false
+            }))
+          }
+
+          writeTerminalStatusToTab(currentActiveTabId, `Upload failed: ${fallbackMessage}`)
+        })
+    },
+    [loadSshDirectory, updateSshBrowserState, writeTerminalStatusToTab]
+  )
+
   const handleWorkspaceDragOver = useCallback((event: React.DragEvent<HTMLElement>): void => {
     if (!shouldHandleFileDrop(event.dataTransfer)) {
       return
@@ -2563,9 +2653,20 @@ function TerminalApp(): React.JSX.Element {
         droppedPaths.add(path)
       }
 
-      writeDroppedPathsToActiveTerminal(Array.from(droppedPaths))
+      const nextDroppedPaths = Array.from(droppedPaths)
+      const currentActiveTabId = activeTabIdRef.current
+      const activeTab = currentActiveTabId
+        ? tabsRef.current.find((tab) => tab.id === currentActiveTabId)
+        : null
+
+      if (activeTab?.restoreState.kind === 'ssh') {
+        uploadDroppedPathsToActiveSshTab(nextDroppedPaths)
+        return
+      }
+
+      writeDroppedPathsToActiveTerminal(nextDroppedPaths)
     },
-    [writeDroppedPathsToActiveTerminal]
+    [uploadDroppedPathsToActiveSshTab, writeDroppedPathsToActiveTerminal]
   )
 
   const handleOpenSshConfigDialog = useCallback((): void => {
