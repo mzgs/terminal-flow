@@ -4,6 +4,7 @@ import { Terminal, type IBufferCell, type ITheme } from '@xterm/xterm'
 import {
   ChevronDown,
   ChevronUp,
+  FolderOpen,
   HardDrive,
   Pencil,
   Plus,
@@ -108,6 +109,7 @@ const defaultSshConfigInput: SshServerConfigInput = {
   host: '',
   name: '',
   password: '',
+  privateKeyPath: '',
   port: 22,
   username: 'root'
 }
@@ -463,6 +465,7 @@ function createSshConfigFormState(
     host: serverConfig.host,
     name: serverConfig.name,
     password: '',
+    privateKeyPath: serverConfig.privateKeyPath,
     port: serverConfig.port,
     username: serverConfig.username
   }
@@ -481,6 +484,10 @@ function SshConfigDialog({ onClose, serverConfig }: SshConfigDialogProps): React
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
+  const [isOtherSettingsOpen, setIsOtherSettingsOpen] = useState(() =>
+    Boolean(serverConfig?.description || serverConfig?.privateKeyPath)
+  )
+  const sshKeyFileInputRef = useRef<HTMLInputElement>(null)
   const isBusy = isDeleting || isSaving
 
   const updateField = useCallback(function updateField<TField extends keyof SshServerConfigInput>(
@@ -502,6 +509,35 @@ function SshConfigDialog({ onClose, serverConfig }: SshConfigDialogProps): React
     }))
     setErrorMessage(null)
   }, [])
+
+  const toggleOtherSettings = useCallback((): void => {
+    setIsOtherSettingsOpen((currentState) => !currentState)
+  }, [])
+
+  const handleSelectPrivateKeyFile = useCallback((): void => {
+    sshKeyFileInputRef.current?.click()
+  }, [])
+
+  const handlePrivateKeyFileChange = useCallback(
+    (event: React.ChangeEvent<HTMLInputElement>): void => {
+      const selectedFile = event.target.files?.[0]
+
+      if (!selectedFile) {
+        return
+      }
+
+      const nextPath = window.api.webUtils.getPathForFile(selectedFile)
+      event.target.value = ''
+
+      if (!nextPath) {
+        setErrorMessage('Unable to read the selected SSH key file path.')
+        return
+      }
+
+      updateField('privateKeyPath', nextPath)
+    },
+    [updateField]
+  )
 
   const handleCancel = useCallback((): void => {
     if (isBusy) {
@@ -539,6 +575,8 @@ function SshConfigDialog({ onClose, serverConfig }: SshConfigDialogProps): React
         host: formState.host.trim(),
         name: formState.name.trim(),
         port: Number.isFinite(formState.port) ? Math.max(1, Math.floor(formState.port)) : 22,
+        privateKeyPath:
+          formState.authMethod === 'privateKey' ? formState.privateKeyPath.trim() : '',
         username: formState.username.trim()
       }
 
@@ -600,11 +638,11 @@ function SshConfigDialog({ onClose, serverConfig }: SshConfigDialogProps): React
           <h2 className="ssh-config-title" id="ssh-config-title">
             {isEditing ? 'Edit SSH server' : 'Add SSH server config'}
           </h2>
-          <p className="ssh-config-copy">
-            {isEditing
-              ? 'Update the saved host definition shown in the SSH menu.'
-              : 'Save a host definition in the main window menu for this session.'}
-          </p>
+          {!isEditing ? (
+            <p className="ssh-config-copy">
+              Save a host definition in the main window menu for this session.
+            </p>
+          ) : null}
         </div>
         <button
           aria-label="Close SSH server dialog"
@@ -684,14 +722,7 @@ function SshConfigDialog({ onClose, serverConfig }: SshConfigDialogProps): React
             </button>
           </div>
         </div>
-        {formState.authMethod === 'privateKey' ? (
-          <div className="ssh-field ssh-field-note" role="note">
-            <span className="ssh-field-label">Private key</span>
-            <p className="ssh-field-help">
-              The terminal will use your existing SSH keys or SSH agent automatically.
-            </p>
-          </div>
-        ) : (
+        {formState.authMethod === 'password' ? (
           <label className="ssh-field">
             <span className="ssh-field-label">Password</span>
             <input
@@ -705,17 +736,91 @@ function SshConfigDialog({ onClose, serverConfig }: SshConfigDialogProps): React
               <span className="ssh-field-help">Leave blank to keep the existing password.</span>
             ) : null}
           </label>
-        )}
-        <label className="ssh-field">
-          <span className="ssh-field-label">Description</span>
-          <textarea
-            className="ssh-field-input ssh-field-textarea"
-            onChange={(event) => updateField('description', event.target.value)}
-            placeholder="Optional note for teammates or environment details"
-            rows={4}
-            value={formState.description}
-          />
-        </label>
+        ) : null}
+        <div className={`ssh-config-disclosure${isOtherSettingsOpen ? ' is-open' : ''}`}>
+          <button
+            aria-controls="ssh-other-settings-panel"
+            aria-expanded={isOtherSettingsOpen}
+            className={`ssh-config-disclosure-toggle${isOtherSettingsOpen ? ' is-open' : ''}`}
+            disabled={isBusy}
+            onClick={toggleOtherSettings}
+            type="button"
+          >
+            <span className="ssh-config-disclosure-labels">
+              <span className="ssh-config-disclosure-title">Other settings</span>
+            </span>
+            <span aria-hidden="true" className="ssh-config-disclosure-action">
+              <span className="ssh-config-disclosure-icon-shell">
+                <ChevronDown
+                  aria-hidden="true"
+                  className={`ssh-config-disclosure-icon${isOtherSettingsOpen ? ' is-open' : ''}`}
+                />
+              </span>
+            </span>
+          </button>
+          {isOtherSettingsOpen ? (
+            <div className="ssh-config-disclosure-panel" id="ssh-other-settings-panel">
+              {formState.authMethod === 'privateKey' ? (
+                <div className="ssh-field">
+                  <span className="ssh-field-label">Custom SSH key file</span>
+                  <div className="ssh-file-picker">
+                    <input
+                      className="ssh-field-input ssh-file-picker-input"
+                      onChange={(event) => updateField('privateKeyPath', event.target.value)}
+                      placeholder="/Users/name/.ssh/id_ed25519"
+                      type="text"
+                      value={formState.privateKeyPath}
+                    />
+                    <div className="ssh-file-picker-actions">
+                      <input
+                        hidden
+                        onChange={handlePrivateKeyFileChange}
+                        ref={sshKeyFileInputRef}
+                        type="file"
+                      />
+                      <button
+                        aria-label="Choose SSH key file"
+                        className="ssh-file-picker-button ssh-file-picker-button-icon"
+                        disabled={isBusy}
+                        onClick={handleSelectPrivateKeyFile}
+                        title="Choose SSH key file"
+                        type="button"
+                      >
+                        <FolderOpen
+                          aria-hidden="true"
+                          className="ssh-file-picker-button-icon-glyph"
+                        />
+                      </button>
+                      {formState.privateKeyPath ? (
+                        <button
+                          className="ssh-file-picker-clear"
+                          disabled={isBusy}
+                          onClick={() => updateField('privateKeyPath', '')}
+                          type="button"
+                        >
+                          Clear
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                  <span className="ssh-field-help">
+                    Leave this empty to use your SSH agent or default identity files.
+                  </span>
+                </div>
+              ) : null}
+              <label className="ssh-field">
+                <span className="ssh-field-label">Description</span>
+                <textarea
+                  className="ssh-field-input ssh-field-textarea"
+                  onChange={(event) => updateField('description', event.target.value)}
+                  placeholder="Optional note for teammates or environment details"
+                  rows={4}
+                  value={formState.description}
+                />
+              </label>
+            </div>
+          ) : null}
+        </div>
         {errorMessage ? <p className="ssh-config-error">{errorMessage}</p> : null}
         <div className="ssh-config-actions">
           {isEditing ? (

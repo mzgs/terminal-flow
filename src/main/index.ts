@@ -469,6 +469,7 @@ function parsePersistedSshServerConfig(value: unknown): SshServerConfig | null {
     host: record.host.trim(),
     name: record.name.trim(),
     password: typeof record.password === 'string' ? record.password : '',
+    privateKeyPath: typeof record.privateKeyPath === 'string' ? record.privateKeyPath.trim() : '',
     port: Math.max(1, Math.floor(portValue)),
     username: record.username.trim()
   }
@@ -660,6 +661,10 @@ function buildSshTerminalCreateOptions(
     }
   }
 
+  if (config.authMethod === 'privateKey' && config.privateKeyPath !== '') {
+    args.push('-i', config.privateKeyPath, '-o', 'IdentitiesOnly=yes')
+  }
+
   args.push('-p', String(config.port), `${config.username}@${config.host}`)
 
   return {
@@ -755,6 +760,7 @@ function normalizeSshConfigInput(config: SshServerConfigInput): SshServerConfigI
     host: config.host.trim(),
     name: config.name.trim(),
     password: config.password,
+    privateKeyPath: config.authMethod === 'privateKey' ? config.privateKeyPath.trim() : '',
     port: Number.isFinite(config.port) ? Math.max(1, Math.floor(config.port)) : 22,
     username: config.username.trim()
   }

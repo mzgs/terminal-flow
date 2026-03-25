@@ -8,6 +8,7 @@ export interface SshServerConfigInput {
   host: string
   name: string
   password: string
+  privateKeyPath: string
   port: number
   username: string
 }
