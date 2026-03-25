@@ -2,6 +2,7 @@ import { type CSSProperties, useCallback, useEffect, useRef, useState } from 're
 import { FitAddon } from '@xterm/addon-fit'
 import { Terminal, type IBufferCell, type ITheme } from '@xterm/xterm'
 import {
+  BrushCleaning,
   Check,
   ChevronDown,
   ChevronUp,
@@ -3781,7 +3782,7 @@ function TerminalApp(): React.JSX.Element {
               type="button"
             >
               <span className="terminal-context-menu-item-icon-shell">
-                <X aria-hidden="true" className="terminal-context-menu-icon" />
+                <BrushCleaning aria-hidden="true" className="terminal-context-menu-icon" />
               </span>
               <span className="terminal-context-menu-label">Clear</span>
             </button>
