@@ -334,18 +334,36 @@ const searchTerminalTheme = {
   selectionInactiveBackground: '#ffd84a'
 } satisfies ITheme
 const sshServerIconLabelOverrides: Record<string, string> = {
+  almalinux: 'AlmaLinux',
+  centos: 'CentOS',
   cloudflare: 'Cloudflare',
   coolify: 'Coolify',
+  'db-ui': 'Database',
   debian: 'Debian',
   digitalocean: 'DigitalOcean',
+  diskover: 'Hard Disk',
   docker: 'Docker',
+  drivebase: 'Storage',
   linux: 'Linux',
+  'linuxserver-io': 'Server',
+  mariadb: 'MariaDB',
+  mongodb: 'MongoDB',
+  mysql: 'MySQL',
   nginx: 'Nginx',
+  opensearch: 'OpenSearch',
+  openvpn: 'OpenVPN',
   portainer: 'Portainer',
   postgresql: 'PostgreSQL',
   proxmox: 'Proxmox',
+  rabbitmq: 'RabbitMQ',
   redis: 'Redis',
-  ubuntu: 'Ubuntu'
+  shellhub: 'Shell',
+  'truenas-scale': 'TrueNAS Scale',
+  ubuntu: 'Ubuntu',
+  unraid: 'Unraid',
+  'visual-db': 'Visual DB',
+  'vmware-esx': 'VMware ESX',
+  wireguard: 'WireGuard'
 }
 const sshServerIconModules = import.meta.glob('./assets/ssh-icons/*.svg', {
   eager: true,
