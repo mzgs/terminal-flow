@@ -1,4 +1,4 @@
-import { type CSSProperties, useCallback, useEffect, useRef, useState } from 'react'
+import { type CSSProperties, useCallback, useEffect, useId, useRef, useState } from 'react'
 import { FitAddon } from '@xterm/addon-fit'
 import { Terminal, type IBufferCell, type ITheme } from '@xterm/xterm'
 import {
@@ -1294,6 +1294,173 @@ interface SshConfigDialogProps {
   serverConfig: SshServerConfig | null
 }
 
+interface SshServerIconSelectProps {
+  disabled?: boolean
+  onChange: (icon: SshServerIcon) => void
+  value: SshServerIcon
+}
+
+function SshServerIconSelect({
+  disabled = false,
+  onChange,
+  value
+}: SshServerIconSelectProps): React.JSX.Element {
+  const [isOpen, setIsOpen] = useState(false)
+  const [query, setQuery] = useState('')
+  const listboxId = useId()
+  const rootRef = useRef<HTMLDivElement>(null)
+  const searchInputRef = useRef<HTMLInputElement>(null)
+  const selectedOption = sshServerIconOptionsByValue.get(value) ?? fallbackSshServerIconOption
+  const normalizedQuery = query.trim().toLocaleLowerCase()
+  const filteredOptions = sshServerIconOptions.filter((option) => {
+    if (normalizedQuery === '') {
+      return true
+    }
+
+    return (
+      option.label.toLocaleLowerCase().includes(normalizedQuery) ||
+      option.value.toLocaleLowerCase().includes(normalizedQuery)
+    )
+  })
+
+  useEffect(() => {
+    if (isOpen) {
+      searchInputRef.current?.focus()
+    }
+  }, [isOpen])
+
+  useEffect(() => {
+    if (!isOpen) {
+      return
+    }
+
+    const handlePointerDown = (event: PointerEvent): void => {
+      if (rootRef.current?.contains(event.target as Node)) {
+        return
+      }
+
+      setIsOpen(false)
+      setQuery('')
+    }
+
+    const handleKeyDown = (event: KeyboardEvent): void => {
+      if (event.key !== 'Escape') {
+        return
+      }
+
+      event.preventDefault()
+      event.stopPropagation()
+      setIsOpen(false)
+      setQuery('')
+    }
+
+    document.addEventListener('pointerdown', handlePointerDown)
+    document.addEventListener('keydown', handleKeyDown, true)
+
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown)
+      document.removeEventListener('keydown', handleKeyDown, true)
+    }
+  }, [isOpen])
+
+  const handleToggleOpen = useCallback((): void => {
+    if (disabled) {
+      return
+    }
+
+    if (isOpen) {
+      setIsOpen(false)
+      setQuery('')
+      return
+    }
+
+    setIsOpen(true)
+  }, [disabled, isOpen])
+
+  const handleSelect = useCallback(
+    (icon: SshServerIcon): void => {
+      onChange(icon)
+      setIsOpen(false)
+      setQuery('')
+    },
+    [onChange]
+  )
+
+  const selectedIconLabel = selectedOption?.label ?? 'Server'
+
+  return (
+    <div className={`ssh-icon-select${isOpen ? ' is-open' : ''}`} ref={rootRef}>
+      <button
+        aria-controls={listboxId}
+        aria-expanded={isOpen}
+        aria-haspopup="listbox"
+        aria-label={`Choose SSH server icon. Selected: ${selectedIconLabel}.`}
+        className="ssh-icon-select-trigger"
+        disabled={disabled}
+        onClick={handleToggleOpen}
+        title={selectedIconLabel}
+        type="button"
+      >
+        <SshServerIconGlyph
+          className="ssh-icon-select-trigger-glyph"
+          icon={selectedOption?.value}
+        />
+      </button>
+      {isOpen ? (
+        <div className="ssh-icon-select-dropdown">
+          <div className="ssh-icon-select-search-shell">
+            <Search aria-hidden="true" className="ssh-icon-select-search-icon" />
+            <input
+              aria-label="Search SSH server icons"
+              className="ssh-icon-select-search"
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search icons"
+              ref={searchInputRef}
+              type="text"
+              value={query}
+            />
+          </div>
+          <div
+            aria-label="SSH server icons"
+            className="ssh-icon-select-list"
+            id={listboxId}
+            role="listbox"
+          >
+            {filteredOptions.length > 0 ? (
+              filteredOptions.map((option) => {
+                const isSelected = value === option.value
+
+                return (
+                  <button
+                    key={option.value}
+                    aria-selected={isSelected}
+                    className={`ssh-icon-select-option${isSelected ? ' is-active' : ''}`}
+                    onClick={() => handleSelect(option.value)}
+                    role="option"
+                    title={option.label}
+                    type="button"
+                  >
+                    <img
+                      alt=""
+                      aria-hidden="true"
+                      className="ssh-icon-select-option-glyph"
+                      draggable={false}
+                      src={option.src}
+                    />
+                    <span className="ssh-icon-select-option-label">{option.label}</span>
+                  </button>
+                )
+              })
+            ) : (
+              <p className="ssh-icon-select-empty">No icons match that search.</p>
+            )}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
 function SshConfigDialog({ onClose, serverConfig }: SshConfigDialogProps): React.JSX.Element {
   const isEditing = serverConfig !== null
   const [formState, setFormState] = useState<SshServerConfigInput>(() =>
@@ -1305,6 +1472,7 @@ function SshConfigDialog({ onClose, serverConfig }: SshConfigDialogProps): React
   const [isOtherSettingsOpen, setIsOtherSettingsOpen] = useState(() =>
     Boolean(serverConfig?.description || serverConfig?.privateKeyPath)
   )
+  const connectionNameInputId = useId()
   const sshKeyFileInputRef = useRef<HTMLInputElement>(null)
   const isBusy = isDeleting || isSaving
 
@@ -1473,45 +1641,25 @@ function SshConfigDialog({ onClose, serverConfig }: SshConfigDialogProps): React
         </button>
       </div>
       <form className="ssh-config-form" onSubmit={handleSubmit}>
-        <label className="ssh-field">
-          <span className="ssh-field-label">Connection name</span>
-          <input
-            autoFocus
-            className="ssh-field-input"
-            onChange={(event) => updateField('name', event.target.value)}
-            placeholder="Production API"
-            type="text"
-            value={formState.name}
-          />
-        </label>
         <div className="ssh-field">
-          <span className="ssh-field-label">Icon</span>
-          <div aria-label="SSH server icon" className="ssh-icon-picker" role="radiogroup">
-            {sshServerIconOptions.map((option) => {
-              const isSelected = formState.icon === option.value
-
-              return (
-                <button
-                  key={option.value}
-                  aria-checked={isSelected}
-                  className={`ssh-icon-option${isSelected ? ' is-active' : ''}`}
-                  disabled={isBusy}
-                  onClick={() => updateField('icon', option.value)}
-                  role="radio"
-                  title={option.label}
-                  type="button"
-                >
-                  <img
-                    alt=""
-                    aria-hidden="true"
-                    className="ssh-icon-option-glyph"
-                    draggable={false}
-                    src={option.src}
-                  />
-                  <span className="ssh-icon-option-label">{option.label}</span>
-                </button>
-              )
-            })}
+          <label className="ssh-field-label" htmlFor={connectionNameInputId}>
+            Connection name
+          </label>
+          <div className="ssh-connection-name-row">
+            <SshServerIconSelect
+              disabled={isBusy}
+              onChange={(icon) => updateField('icon', icon)}
+              value={formState.icon}
+            />
+            <input
+              autoFocus
+              className="ssh-field-input"
+              id={connectionNameInputId}
+              onChange={(event) => updateField('name', event.target.value)}
+              placeholder="Production API"
+              type="text"
+              value={formState.name}
+            />
           </div>
         </div>
         <div className="ssh-config-grid">
