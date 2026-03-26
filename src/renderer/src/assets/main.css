@@ -1145,6 +1145,9 @@ body {
   --ssh-config-text-muted: rgba(243, 244, 246, 0.72);
   --ssh-config-primary: #3b82f6;
   --ssh-config-primary-strong: #93c5fd;
+  --ssh-config-danger: #ff625a;
+  --ssh-config-danger-strong: #ff8a82;
+  --ssh-config-danger-text: #fff1f0;
   --ssh-config-accent: #22d3ee;
   --ssh-config-focus-ring: rgba(59, 130, 246, 0.22);
   position: fixed;
@@ -1695,9 +1698,9 @@ body {
 
 .ssh-config-danger {
   margin-right: auto;
-  border-color: rgba(34, 211, 238, 0.46);
-  background: rgba(34, 211, 238, 0.12);
-  color: var(--ssh-config-accent);
+  border-color: var(--ssh-config-danger);
+  background: var(--ssh-config-danger);
+  color: var(--ssh-config-danger-text);
 }
 
 .ssh-config-danger:disabled {
@@ -1729,8 +1732,8 @@ body {
 
 .ssh-config-danger:hover,
 .ssh-config-danger:focus-visible {
-  border-color: var(--ssh-config-accent);
-  background: rgba(34, 211, 238, 0.18);
+  border-color: var(--ssh-config-danger-strong);
+  background: var(--ssh-config-danger-strong);
   outline: none;
 }
 
