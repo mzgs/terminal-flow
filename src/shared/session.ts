@@ -4,6 +4,7 @@ export interface LocalRestorableTabState {
 }
 
 export interface SshRestorableTabState {
+  browserPath?: string
   configId: string
   cwd?: string
   kind: 'ssh'

@@ -352,6 +352,7 @@ const defaultSshConfigInput: SshServerConfigInput = {
 function cloneRestorableTabState(restoreState: RestorableTabState): RestorableTabState {
   if (restoreState.kind === 'ssh') {
     return {
+      ...(restoreState.browserPath ? { browserPath: restoreState.browserPath } : {}),
       ...(restoreState.cwd ? { cwd: restoreState.cwd } : {}),
       configId: restoreState.configId,
       kind: 'ssh'
@@ -1756,7 +1757,10 @@ function TerminalApp(): React.JSX.Element {
           })
 
           updateTab(tabId, (tab) => {
-            if (tab.restoreState.kind !== 'ssh' || tab.restoreState.cwd === listing.path) {
+            if (
+              tab.restoreState.kind !== 'ssh' ||
+              tab.restoreState.browserPath === listing.path
+            ) {
               return tab
             }
 
@@ -1764,7 +1768,7 @@ function TerminalApp(): React.JSX.Element {
               ...tab,
               restoreState: {
                 ...tab.restoreState,
-                cwd: listing.path
+                browserPath: listing.path
               }
             }
           })
@@ -2961,7 +2965,7 @@ function TerminalApp(): React.JSX.Element {
       }
 
       const browserState = sshBrowserStatesRef.current[currentActiveTabId]
-      const targetPath = (activeTab.restoreState.cwd ?? browserState?.path ?? '').trim()
+      const targetPath = (activeTab.restoreState.cwd ?? '').trim()
 
       if (targetPath === '') {
         const message = 'Unable to upload: remote working directory is not available yet.'
@@ -3125,6 +3129,8 @@ function TerminalApp(): React.JSX.Element {
     activeTab?.restoreState.kind === 'ssh' ? activeTab.restoreState.configId : null
   const activeSshCwd =
     activeTab?.restoreState.kind === 'ssh' ? (activeTab.restoreState.cwd ?? null) : null
+  const activeSshBrowserPath =
+    activeTab?.restoreState.kind === 'ssh' ? (activeTab.restoreState.browserPath ?? null) : null
   const activeSshTabId = activeTab?.restoreState.kind === 'ssh' ? activeTab.id : null
   const activeSshBrowserState = activeTabId ? (sshBrowserStates[activeTabId] ?? null) : null
   const activeSshBrowserId = activeSshBrowserState
@@ -3138,9 +3144,11 @@ function TerminalApp(): React.JSX.Element {
   const sshBrowserWorkspaceStyle = activeSshBrowserState
     ? ({ '--ssh-browser-width': `${activeSshBrowserWidth}px` } as CSSProperties)
     : undefined
+  const openCurrentFolderPath =
+    activeSshBrowserState?.path ?? activeSshBrowserPath ?? activeSshCwd ?? null
   const openCurrentFolderTitle = activeSshConfigId
-    ? activeSshCwd
-      ? `Browse ${activeSshCwd}`
+    ? openCurrentFolderPath
+      ? `Browse ${openCurrentFolderPath}`
       : 'Browse remote files'
     : activeLocalTabCwd
       ? `Open ${activeLocalTabCwd}`
@@ -3154,7 +3162,7 @@ function TerminalApp(): React.JSX.Element {
       }
 
       setIsSshMenuOpen(false)
-      loadSshDirectory(activeSshConfigId, activeSshCwd ?? undefined, activeSshTabId)
+      loadSshDirectory(activeSshConfigId, openCurrentFolderPath ?? undefined, activeSshTabId)
       return
     }
 
@@ -3167,12 +3175,14 @@ function TerminalApp(): React.JSX.Element {
     })
   }, [
     activeLocalTabCwd,
+    activeSshBrowserPath,
     activeSshConfigId,
     activeSshCwd,
     activeSshTabId,
     activeSshBrowserState,
     closeSshBrowserForTab,
-    loadSshDirectory
+    loadSshDirectory,
+    openCurrentFolderPath
   ])
 
   const handleOpenSshBrowserDirectory = useCallback(

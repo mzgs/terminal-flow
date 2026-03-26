@@ -1275,10 +1275,19 @@ function parsePersistedRestorableTabState(value: unknown): RestorableTabState | 
       return null
     }
 
+    if (record.browserPath !== undefined && typeof record.browserPath !== 'string') {
+      return null
+    }
+
     const cwd =
       typeof record.cwd === 'string' && record.cwd.trim() !== '' ? record.cwd.trim() : undefined
+    const browserPath =
+      typeof record.browserPath === 'string' && record.browserPath.trim() !== ''
+        ? record.browserPath.trim()
+        : undefined
 
     return {
+      browserPath,
       cwd,
       configId: record.configId.trim(),
       kind: 'ssh'
