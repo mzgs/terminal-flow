@@ -1134,22 +1134,26 @@ body {
 }
 
 .ssh-config-dialog-shell {
-  --ssh-config-background: #080808;
-  --ssh-config-surface: #151515;
-  --ssh-config-surface-strong: #080808;
-  --ssh-config-surface-hover: rgba(59, 130, 246, 0.12);
-  --ssh-config-border: rgba(243, 244, 246, 0.14);
-  --ssh-config-border-strong: rgba(147, 197, 253, 0.28);
-  --ssh-config-border-active: #3b82f6;
-  --ssh-config-text: #f3f4f6;
-  --ssh-config-text-muted: rgba(243, 244, 246, 0.72);
-  --ssh-config-primary: #3b82f6;
-  --ssh-config-primary-strong: #93c5fd;
-  --ssh-config-danger: #ff625a;
-  --ssh-config-danger-strong: #ff8a82;
-  --ssh-config-danger-text: #fff1f0;
-  --ssh-config-accent: #22d3ee;
-  --ssh-config-focus-ring: rgba(59, 130, 246, 0.22);
+  --ssh-config-background: #121212;
+  --ssh-config-surface: #1e1e1e;
+  --ssh-config-surface-strong: #121212;
+  --ssh-config-surface-hover: rgba(3, 218, 198, 0.08);
+  --ssh-config-border: rgba(225, 225, 225, 0.14);
+  --ssh-config-border-strong: rgba(3, 218, 198, 0.3);
+  --ssh-config-border-active: #4f8cff;
+  --ssh-config-text: #ffffff;
+  --ssh-config-text-muted: rgba(255, 255, 255, 0.72);
+  --ssh-config-primary: #4f8cff;
+  --ssh-config-primary-strong: #76a6ff;
+  --ssh-config-primary-soft: rgba(79, 140, 255, 0.18);
+  --ssh-config-secondary: #03dac6;
+  --ssh-config-danger: #ef4444;
+  --ssh-config-danger-strong: #f87171;
+  --ssh-config-danger-text: #ffffff;
+  --ssh-config-accent: #03dac6;
+  --ssh-config-accent-soft: rgba(3, 218, 198, 0.12);
+  --ssh-config-accent-border: rgba(3, 218, 198, 0.34);
+  --ssh-config-focus-ring: rgba(79, 140, 255, 0.22);
   position: fixed;
   inset: 0;
   z-index: 40;
@@ -1160,7 +1164,7 @@ body {
   overflow-x: hidden;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
-  background: rgba(8, 8, 8, 0.84);
+  background: rgba(18, 18, 18, 0.84);
 }
 
 .ssh-config-dialog {
@@ -1451,7 +1455,7 @@ body {
 
 .ssh-icon-select-option.is-active {
   border-color: var(--ssh-config-border-active);
-  background: rgba(59, 130, 246, 0.16);
+  background: var(--ssh-config-primary-soft);
   color: var(--ssh-config-text);
 }
 
@@ -1644,7 +1648,7 @@ body {
 
 .ssh-auth-option.is-active {
   border-color: var(--ssh-config-border-active);
-  background: rgba(59, 130, 246, 0.16);
+  background: var(--ssh-config-primary-soft);
   color: var(--ssh-config-text);
 }
 
@@ -1662,9 +1666,9 @@ body {
 
 .ssh-config-error {
   padding: 10px 12px;
-  border: 1px solid rgba(34, 211, 238, 0.46);
+  border: 1px solid var(--ssh-config-accent-border);
   border-radius: 8px;
-  background: rgba(34, 211, 238, 0.12);
+  background: var(--ssh-config-accent-soft);
   color: var(--ssh-config-accent);
   font-size: 13px;
 }
@@ -1716,7 +1720,7 @@ body {
 .ssh-config-primary {
   border-color: var(--ssh-config-primary);
   background: var(--ssh-config-primary);
-  color: var(--ssh-config-background);
+  color: #ffffff;
 }
 
 .ssh-config-primary:disabled {
