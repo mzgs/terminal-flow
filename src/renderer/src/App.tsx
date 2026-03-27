@@ -3197,20 +3197,22 @@ function QuickCommandsSettingsPanel({
                           ) : (
                             <>
                               <button
-                                className="settings-table-action-button"
+                                aria-label={`Edit ${quickCommand.title}`}
+                                className="settings-table-action-button is-icon-only"
                                 onClick={() => handleStartEditing(quickCommand)}
+                                title="Edit quick command"
                                 type="button"
                               >
                                 <Pencil aria-hidden="true" className="settings-table-action-icon" />
-                                Edit
                               </button>
                               <button
-                                className="settings-table-action-button is-danger"
+                                aria-label={`Delete ${quickCommand.title}`}
+                                className="settings-table-action-button is-danger is-icon-only"
                                 onClick={() => handleDeleteQuickCommand(quickCommand)}
+                                title="Delete quick command"
                                 type="button"
                               >
                                 <Trash2 aria-hidden="true" className="settings-table-action-icon" />
-                                Delete
                               </button>
                             </>
                           )}

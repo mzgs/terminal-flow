@@ -1590,6 +1590,12 @@ body {
   background: rgba(119, 215, 255, 0.18);
 }
 
+.settings-table-action-button.is-icon-only {
+  justify-content: center;
+  width: 32px;
+  padding: 0;
+}
+
 .settings-table-action-button.is-danger {
   border-color: rgba(255, 120, 120, 0.18);
   color: #ffb3b3;
