@@ -221,15 +221,23 @@ interface QuickCommandDraft {
   title: string
 }
 
+type QuickOpenCommandGroupId = 'commands' | 'servers'
+
 interface QuickOpenCommandItem {
   action: () => void
   description: string
   disabled?: boolean
+  group: QuickOpenCommandGroupId
   icon: LucideIcon
   id: string
   keywords: string[]
   shortcut: string[]
   title: string
+}
+
+interface QuickOpenCommandGroup {
+  id: QuickOpenCommandGroupId
+  label: string
 }
 
 const defaultTabTitle = '~'
@@ -246,6 +254,16 @@ const sshBrowserResizerWidth = 10
 const sshRemoteCwdSequencePrefix = '\x1b]633;TerminalRemoteCwd='
 const uploadProgressCircleRadius = 16
 const uploadProgressCircleCircumference = 2 * Math.PI * uploadProgressCircleRadius
+const quickOpenCommandGroups: QuickOpenCommandGroup[] = [
+  {
+    id: 'commands',
+    label: 'Commands'
+  },
+  {
+    id: 'servers',
+    label: 'Servers'
+  }
+]
 const sshRemoteCwdPattern = new RegExp(
   String.raw`\x1b]633;TerminalRemoteCwd=([^\x07\x1b]*)(?:\x07|\x1b\\)`,
   'g'
@@ -6166,10 +6184,22 @@ function TerminalApp(): React.JSX.Element {
       ? `Open ${activeLocalTabCwd}`
       : 'Current folder is not available yet'
   const primaryModifierLabel = platformClassName === 'platform-macos' ? 'Cmd' : 'Ctrl'
+  const sortedSshServers = [...sshServers].sort((left, right) => {
+    const nameDifference = left.name.localeCompare(right.name, undefined, { sensitivity: 'base' })
+
+    if (nameDifference !== 0) {
+      return nameDifference
+    }
+
+    return formatSshTarget(left).localeCompare(formatSshTarget(right), undefined, {
+      sensitivity: 'base'
+    })
+  })
   const quickOpenCommands: QuickOpenCommandItem[] = [
     {
       action: handleOpenSettingsDialog,
       description: 'Open application settings.',
+      group: 'commands',
       icon: Settings,
       id: 'settings',
       keywords: ['settings', 'preferences', 'config', 'options'],
@@ -6179,6 +6209,7 @@ function TerminalApp(): React.JSX.Element {
     {
       action: createTab,
       description: 'Create a new local terminal tab.',
+      group: 'commands',
       icon: Plus,
       id: 'new-tab',
       keywords: ['new', 'new tab', 'tab', 'terminal', 'shell', 'nwe', 'nwe tab'],
@@ -6189,6 +6220,7 @@ function TerminalApp(): React.JSX.Element {
       action: clearActiveTerminalContent,
       description: 'Clear the visible terminal output in the current tab.',
       disabled: activeTabId === null,
+      group: 'commands',
       icon: BrushCleaning,
       id: 'clean',
       keywords: ['clean', 'clear', 'erase', 'terminal'],
@@ -6205,33 +6237,79 @@ function TerminalApp(): React.JSX.Element {
       },
       description: activeTab ? `Close ${activeTab.title}.` : 'Close the current tab.',
       disabled: activeTabId === null,
+      group: 'commands',
       icon: X,
       id: 'close-tab',
       keywords: ['close', 'tab', 'remove'],
       shortcut: [primaryModifierLabel, 'W'],
       title: 'Close Tab'
-    }
+    },
+    ...sortedSshServers.map((server) => {
+      const target = formatSshTarget(server)
+      const trimmedDescription = server.description.trim()
+
+      return {
+        action: () => handleConnectToSshServer(server),
+        description: trimmedDescription ? `${trimmedDescription} · ${target}` : target,
+        group: 'servers' as const,
+        icon: Server,
+        id: `ssh-server-${server.id}`,
+        keywords: [
+          'ssh',
+          'server',
+          'connect',
+          server.name,
+          server.host,
+          server.username,
+          String(server.port),
+          target,
+          trimmedDescription
+        ].filter((keyword) => keyword !== ''),
+        shortcut: [],
+        title: server.name
+      }
+    })
   ]
   const quickOpenNormalizedQuery = normalizeQuickOpenQuery(quickOpenQuery)
-  const filteredQuickOpenCommands = quickOpenCommands
+  const scoredQuickOpenCommands = quickOpenCommands
     .map((command, index) => ({
       command,
       index,
       score: getQuickOpenCommandScore(command, quickOpenNormalizedQuery)
     }))
-    .filter(({ score }) => quickOpenNormalizedQuery === '' || score >= 0)
-    .sort((left, right) => {
-      if (left.command.disabled !== right.command.disabled) {
-        return Number(left.command.disabled) - Number(right.command.disabled)
-      }
+  let nextQuickOpenResultIndex = 0
+  const filteredQuickOpenCommandGroups = quickOpenCommandGroups
+    .map((group) => {
+      const items = scoredQuickOpenCommands
+        .filter(
+          ({ command, score }) =>
+            command.group === group.id && (quickOpenNormalizedQuery === '' || score >= 0)
+        )
+        .sort((left, right) => {
+          if (left.command.disabled !== right.command.disabled) {
+            return Number(Boolean(left.command.disabled)) - Number(Boolean(right.command.disabled))
+          }
 
-      if (left.score !== right.score) {
-        return right.score - left.score
-      }
+          if (left.score !== right.score) {
+            return right.score - left.score
+          }
 
-      return left.index - right.index
+          return left.index - right.index
+        })
+        .map(({ command }) => ({
+          command,
+          index: nextQuickOpenResultIndex++
+        }))
+
+      return {
+        group,
+        items
+      }
     })
-    .map(({ command }) => command)
+    .filter(({ items }) => items.length > 0)
+  const filteredQuickOpenCommands = filteredQuickOpenCommandGroups.flatMap(({ items }) =>
+    items.map(({ command }) => command)
+  )
 
   const executeQuickOpenCommand = useCallback(
     (command: QuickOpenCommandItem | undefined): void => {
@@ -7593,46 +7671,60 @@ function TerminalApp(): React.JSX.Element {
           </div>
           <div aria-label="Available commands" className="quick-open-results" role="listbox">
             {filteredQuickOpenCommands.length > 0 ? (
-              filteredQuickOpenCommands.map((command, index) => {
-                const Icon = command.icon
-                const isSelected = index === quickOpenSelectedIndex
+              filteredQuickOpenCommandGroups.map(({ group, items }) => (
+                <div
+                  aria-label={group.label}
+                  className="quick-open-group"
+                  key={group.id}
+                  role="group"
+                >
+                  <div aria-hidden="true" className="quick-open-group-title">
+                    {group.label}
+                  </div>
+                  {items.map(({ command, index }) => {
+                    const Icon = command.icon
+                    const isSelected = index === quickOpenSelectedIndex
 
-                return (
-                  <button
-                    aria-disabled={command.disabled}
-                    aria-selected={isSelected}
-                    className={`quick-open-item${isSelected ? ' is-selected' : ''}${command.disabled ? ' is-disabled' : ''}`}
-                    key={command.id}
-                    onClick={() => executeQuickOpenCommand(command)}
-                    onMouseMove={() => {
-                      if (quickOpenSelectedIndex !== index) {
-                        setQuickOpenSelectedIndex(index)
-                      }
-                    }}
-                    role="option"
-                    type="button"
-                  >
-                    <span className="quick-open-item-icon-shell">
-                      <Icon aria-hidden="true" className="quick-open-item-icon" />
-                    </span>
-                    <span className="quick-open-item-copy">
-                      <span className="quick-open-item-row">
-                        <span className="quick-open-item-title">{command.title}</span>
-                        {command.shortcut.length > 0 ? (
-                          <span aria-hidden="true" className="quick-open-item-shortcut">
-                            {command.shortcut.map((part) => (
-                              <span className="quick-open-kbd" key={`${command.id}-${part}`}>
-                                {part}
+                    return (
+                      <button
+                        aria-disabled={command.disabled}
+                        aria-selected={isSelected}
+                        className={`quick-open-item${isSelected ? ' is-selected' : ''}${command.disabled ? ' is-disabled' : ''}`}
+                        key={command.id}
+                        onClick={() => executeQuickOpenCommand(command)}
+                        onMouseMove={() => {
+                          if (quickOpenSelectedIndex !== index) {
+                            setQuickOpenSelectedIndex(index)
+                          }
+                        }}
+                        role="option"
+                        type="button"
+                      >
+                        <span className="quick-open-item-icon-shell">
+                          <Icon aria-hidden="true" className="quick-open-item-icon" />
+                        </span>
+                        <span className="quick-open-item-copy">
+                          <span className="quick-open-item-row">
+                            <span className="quick-open-item-title">{command.title}</span>
+                            {command.shortcut.length > 0 ? (
+                              <span aria-hidden="true" className="quick-open-item-shortcut">
+                                {command.shortcut.map((part) => (
+                                  <span className="quick-open-kbd" key={`${command.id}-${part}`}>
+                                    {part}
+                                  </span>
+                                ))}
                               </span>
-                            ))}
+                            ) : null}
                           </span>
-                        ) : null}
-                      </span>
-                      <span className="quick-open-item-description">{command.description}</span>
-                    </span>
-                  </button>
-                )
-              })
+                          <span className="quick-open-item-description">
+                            {command.description}
+                          </span>
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
+              ))
             ) : (
               <div className="quick-open-empty">No matching commands.</div>
             )}
