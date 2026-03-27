@@ -149,13 +149,7 @@ interface SshServerIconOption {
 }
 
 type TerminalFontFamilyId = string
-type TerminalColorSchemeId =
-  | 'midnight-blue'
-  | 'nord'
-  | 'gruvbox'
-  | 'rose-pine'
-  | 'ayu-mirage'
-  | 'everforest'
+type TerminalColorSchemeId = 'midnight-blue' | 'rose-pine'
 type TerminalFontWeight = '300' | '400' | '500' | '600' | '700'
 type SettingsTabId = 'general' | 'appearance'
 
@@ -374,54 +368,6 @@ const defaultTerminalTheme = {
   white: '#f5f5f5',
   yellow: '#e6c15a'
 } satisfies ITheme
-const nordTerminalTheme = {
-  background: '#2e3440',
-  black: '#3b4252',
-  blue: '#81a1c1',
-  brightBlack: '#4c566a',
-  brightBlue: '#8fbcbb',
-  brightCyan: '#93ccdc',
-  brightGreen: '#b1d196',
-  brightMagenta: '#c895bf',
-  brightRed: '#d06f79',
-  brightWhite: '#eceff4',
-  brightYellow: '#f0d399',
-  cursor: '#eceff4',
-  cursorAccent: '#2e3440',
-  cyan: '#88c0d0',
-  foreground: '#d8dee9',
-  green: '#a3be8c',
-  magenta: '#b48ead',
-  red: '#bf616a',
-  selectionBackground: 'rgba(216, 222, 233, 0.18)',
-  selectionInactiveBackground: 'rgba(216, 222, 233, 0.14)',
-  white: '#e5e9f0',
-  yellow: '#ebcb8b'
-} satisfies ITheme
-const gruvboxTerminalTheme = {
-  background: '#1d2021',
-  black: '#282828',
-  blue: '#83a598',
-  brightBlack: '#928374',
-  brightBlue: '#8ec07c',
-  brightCyan: '#8ec07c',
-  brightGreen: '#b8bb26',
-  brightMagenta: '#d3869b',
-  brightRed: '#fb4934',
-  brightWhite: '#fbf1c7',
-  brightYellow: '#fabd2f',
-  cursor: '#fbf1c7',
-  cursorAccent: '#1d2021',
-  cyan: '#8ec07c',
-  foreground: '#ebdbb2',
-  green: '#98971a',
-  magenta: '#b16286',
-  red: '#cc241d',
-  selectionBackground: 'rgba(250, 189, 47, 0.18)',
-  selectionInactiveBackground: 'rgba(250, 189, 47, 0.14)',
-  white: '#d5c4a1',
-  yellow: '#d79921'
-} satisfies ITheme
 const rosePineTerminalTheme = {
   background: '#191724',
   black: '#26233a',
@@ -446,54 +392,6 @@ const rosePineTerminalTheme = {
   white: '#e0def4',
   yellow: '#f6c177'
 } satisfies ITheme
-const ayuMirageTerminalTheme = {
-  background: '#1f2430',
-  black: '#242936',
-  blue: '#73d0ff',
-  brightBlack: '#707a8c',
-  brightBlue: '#89ddff',
-  brightCyan: '#95e6cb',
-  brightGreen: '#bbe67e',
-  brightMagenta: '#dcc7ff',
-  brightRed: '#ffadad',
-  brightWhite: '#ffffff',
-  brightYellow: '#ffd580',
-  cursor: '#cbccc6',
-  cursorAccent: '#1f2430',
-  cyan: '#5ccfe6',
-  foreground: '#cbccc6',
-  green: '#aad94c',
-  magenta: '#d4bfff',
-  red: '#f28779',
-  selectionBackground: 'rgba(115, 208, 255, 0.18)',
-  selectionInactiveBackground: 'rgba(115, 208, 255, 0.14)',
-  white: '#d9d7ce',
-  yellow: '#ffcc66'
-} satisfies ITheme
-const everforestTerminalTheme = {
-  background: '#232a2e',
-  black: '#2d353b',
-  blue: '#7fbbb3',
-  brightBlack: '#859289',
-  brightBlue: '#83c092',
-  brightCyan: '#93c092',
-  brightGreen: '#a7c080',
-  brightMagenta: '#d699b6',
-  brightRed: '#e67e80',
-  brightWhite: '#d3c6aa',
-  brightYellow: '#dbbc7f',
-  cursor: '#d3c6aa',
-  cursorAccent: '#232a2e',
-  cyan: '#83c092',
-  foreground: '#d3c6aa',
-  green: '#a7c080',
-  magenta: '#d699b6',
-  red: '#e67e80',
-  selectionBackground: 'rgba(167, 192, 128, 0.18)',
-  selectionInactiveBackground: 'rgba(167, 192, 128, 0.14)',
-  white: '#d3c6aa',
-  yellow: '#dbbc7f'
-} satisfies ITheme
 const terminalColorSchemes: TerminalColorScheme[] = [
   {
     description: 'Cool blues on a hard black base. Matches the current default.',
@@ -502,34 +400,10 @@ const terminalColorSchemes: TerminalColorScheme[] = [
     theme: defaultTerminalTheme
   },
   {
-    description: 'Low-glare slate palette with icy accents and softer contrast.',
-    id: 'nord',
-    label: 'Nord',
-    theme: nordTerminalTheme
-  },
-  {
-    description: 'Warm amber and olive tones with a denser terminal feel.',
-    id: 'gruvbox',
-    label: 'Gruvbox',
-    theme: gruvboxTerminalTheme
-  },
-  {
     description: 'Muted mauves with soft cyan for calmer long sessions.',
     id: 'rose-pine',
     label: 'Rose Pine',
     theme: rosePineTerminalTheme
-  },
-  {
-    description: 'Desaturated navy with balanced warm highlights and clear ANSI colors.',
-    id: 'ayu-mirage',
-    label: 'Ayu Mirage',
-    theme: ayuMirageTerminalTheme
-  },
-  {
-    description: 'Forest greens and parchment neutrals tuned for low fatigue.',
-    id: 'everforest',
-    label: 'Everforest',
-    theme: everforestTerminalTheme
   }
 ]
 const defaultTerminalColorScheme = terminalColorSchemes[0]
