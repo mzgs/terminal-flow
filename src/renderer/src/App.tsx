@@ -1101,6 +1101,21 @@ function normalizeQuickCommands(quickCommands: QuickCommand[] | null | undefined
     .filter((quickCommand): quickCommand is QuickCommand => quickCommand !== null)
 }
 
+function getQuickCommandTerminalInput(command: string): string {
+  const placeholder = '{}'
+  const placeholderIndex = command.indexOf(placeholder)
+
+  if (placeholderIndex === -1) {
+    return `${command}\r`
+  }
+
+  const prefix = command.slice(0, placeholderIndex)
+  const suffix = command.slice(placeholderIndex + placeholder.length)
+  const moveCursorLeft = '\u001b[D'.repeat(Array.from(suffix).length)
+
+  return `${prefix}${suffix}${moveCursorLeft}`
+}
+
 function createQuickCommandDraft(): QuickCommandDraft {
   return {
     command: '',
@@ -4471,12 +4486,7 @@ function TerminalApp(): React.JSX.Element {
     setQuickOpenQuery('')
     setQuickOpenSelectedIndex(0)
     setIsQuickOpenOpen(true)
-  }, [
-    closeSshBrowserContextMenu,
-    closeTerminalContextMenu,
-    isQuickOpenOpen,
-    quickOpenInputRef
-  ])
+  }, [closeSshBrowserContextMenu, closeTerminalContextMenu, isQuickOpenOpen, quickOpenInputRef])
 
   const closeQuickOpen = useCallback(
     (shouldRestoreFocus = true): void => {
@@ -6168,7 +6178,10 @@ function TerminalApp(): React.JSX.Element {
       return
     }
 
-    window.api.terminal.write(runtime.terminalId, `${quickCommand.command}\r`)
+    window.api.terminal.write(
+      runtime.terminalId,
+      getQuickCommandTerminalInput(quickCommand.command)
+    )
     runtime.terminal.focus()
   }, [])
 
@@ -6314,12 +6327,11 @@ function TerminalApp(): React.JSX.Element {
     })
   ]
   const quickOpenNormalizedQuery = normalizeQuickOpenQuery(quickOpenQuery)
-  const scoredQuickOpenCommands = quickOpenCommands
-    .map((command, index) => ({
-      command,
-      index,
-      score: getQuickOpenCommandScore(command, quickOpenNormalizedQuery)
-    }))
+  const scoredQuickOpenCommands = quickOpenCommands.map((command, index) => ({
+    command,
+    index,
+    score: getQuickOpenCommandScore(command, quickOpenNormalizedQuery)
+  }))
   let nextQuickOpenResultIndex = 0
   const filteredQuickOpenCommandGroups = quickOpenCommandGroups
     .map((group) => {
@@ -6385,8 +6397,9 @@ function TerminalApp(): React.JSX.Element {
     }
 
     const animationFrameId = window.requestAnimationFrame(() => {
-      const selectedItem =
-        quickOpenResultsRef.current?.querySelector<HTMLButtonElement>('.quick-open-item.is-selected')
+      const selectedItem = quickOpenResultsRef.current?.querySelector<HTMLButtonElement>(
+        '.quick-open-item.is-selected'
+      )
 
       selectedItem?.scrollIntoView({
         block: 'nearest'
@@ -7707,7 +7720,7 @@ function TerminalApp(): React.JSX.Element {
                     filteredQuickOpenCommands.length === 0
                       ? 0
                       : (currentIndex - 1 + filteredQuickOpenCommands.length) %
-                          filteredQuickOpenCommands.length
+                        filteredQuickOpenCommands.length
                   )
                   return
                 }
@@ -7785,7 +7798,9 @@ function TerminalApp(): React.JSX.Element {
                           </span>
                           <span
                             className="quick-open-item-description"
-                            title={command.group === 'quickCommands' ? command.description : undefined}
+                            title={
+                              command.group === 'quickCommands' ? command.description : undefined
+                            }
                           >
                             {command.description}
                           </span>
