@@ -1231,6 +1231,9 @@ body {
 }
 
 .settings-dialog-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   padding: 0 0 10px;
   border: 0;
   border-bottom: 2px solid transparent;
@@ -1238,10 +1241,18 @@ body {
   color: var(--color-text-muted);
   font-size: 13px;
   font-weight: 600;
+  line-height: 1;
   cursor: pointer;
   transition:
     border-color 160ms ease,
     color 160ms ease;
+}
+
+.settings-dialog-tab-icon {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+  stroke-width: 2;
 }
 
 .settings-dialog-tab:hover,

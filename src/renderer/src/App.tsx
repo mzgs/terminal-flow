@@ -20,11 +20,13 @@ import {
   FileVideoCamera,
   Folder,
   FolderOpen,
+  Palette,
   Pencil,
   Plus,
   Search,
   Server,
   Settings,
+  Settings2,
   TextSelect,
   Trash2,
   X
@@ -2713,6 +2715,25 @@ function SettingsDialog({
   const generalTabId = `${titleId}-tab-general`
   const appearanceTabId = `${titleId}-tab-appearance`
   const panelId = `${titleId}-panel`
+  const settingsTabs: Array<{
+    icon: LucideIcon
+    id: SettingsTabId
+    label: string
+    tabId: string
+  }> = [
+    {
+      icon: Settings2,
+      id: 'general',
+      label: 'General',
+      tabId: generalTabId
+    },
+    {
+      icon: Palette,
+      id: 'appearance',
+      label: 'Appearance',
+      tabId: appearanceTabId
+    }
+  ]
 
   return (
     <Modal
@@ -2743,28 +2764,21 @@ function SettingsDialog({
         </button>
       </div>
       <div aria-label="Settings sections" className="settings-dialog-tabs" role="tablist">
-        <button
-          aria-controls={panelId}
-          aria-selected={activeTabId === 'general'}
-          className={`settings-dialog-tab${activeTabId === 'general' ? ' is-active' : ''}`}
-          id={generalTabId}
-          onClick={() => setActiveTabId('general')}
-          role="tab"
-          type="button"
-        >
-          General
-        </button>
-        <button
-          aria-controls={panelId}
-          aria-selected={activeTabId === 'appearance'}
-          className={`settings-dialog-tab${activeTabId === 'appearance' ? ' is-active' : ''}`}
-          id={appearanceTabId}
-          onClick={() => setActiveTabId('appearance')}
-          role="tab"
-          type="button"
-        >
-          Appearance
-        </button>
+        {settingsTabs.map(({ icon: Icon, id, label, tabId }) => (
+          <button
+            aria-controls={panelId}
+            aria-selected={activeTabId === id}
+            className={`settings-dialog-tab${activeTabId === id ? ' is-active' : ''}`}
+            id={tabId}
+            key={id}
+            onClick={() => setActiveTabId(id)}
+            role="tab"
+            type="button"
+          >
+            <Icon aria-hidden="true" className="settings-dialog-tab-icon" />
+            <span>{label}</span>
+          </button>
+        ))}
       </div>
       <section
         aria-labelledby={activeTabId === 'general' ? generalTabId : appearanceTabId}
