@@ -1254,50 +1254,6 @@ body {
   stroke-width: 2.2;
 }
 
-.settings-tab-list {
-  display: flex;
-  align-items: center;
-  gap: 20px;
-  padding-bottom: 1px;
-  border-bottom: 1px solid rgba(119, 215, 255, 0.12);
-}
-
-.settings-tab {
-  position: relative;
-  padding: 0 0 12px;
-  border: none;
-  background: transparent;
-  color: var(--color-text-muted);
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: color 160ms ease;
-}
-
-.settings-tab::after {
-  content: '';
-  position: absolute;
-  right: 0;
-  bottom: -1px;
-  left: 0;
-  height: 2px;
-  background: transparent;
-}
-
-.settings-tab.is-active {
-  color: var(--color-text);
-}
-
-.settings-tab.is-active::after {
-  background: var(--color-accent);
-}
-
-.settings-tab:hover,
-.settings-tab:focus-visible {
-  color: var(--color-text);
-  outline: none;
-}
-
 .settings-panel {
   display: grid;
   min-height: 320px;
@@ -1305,6 +1261,95 @@ body {
   border: 1px solid rgba(119, 215, 255, 0.12);
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.02);
+}
+
+.settings-appearance {
+  display: grid;
+  gap: 20px;
+  padding: 20px;
+}
+
+.settings-appearance-section {
+  display: grid;
+  gap: 16px;
+}
+
+.settings-appearance-copy {
+  display: grid;
+  gap: 6px;
+}
+
+.settings-appearance-title {
+  color: var(--color-text);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.settings-appearance-controls {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.settings-field {
+  display: grid;
+  gap: 6px;
+}
+
+.settings-field-label {
+  color: var(--color-text);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.settings-field-input {
+  width: 100%;
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid rgba(119, 215, 255, 0.14);
+  border-radius: 8px;
+  background: rgba(9, 14, 22, 0.72);
+  color: var(--color-text);
+  font-size: 13px;
+  line-height: 1.4;
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.settings-field-input:focus {
+  outline: none;
+  border-color: rgba(119, 215, 255, 0.42);
+  background: rgba(12, 18, 28, 0.9);
+  box-shadow: 0 0 0 3px rgba(119, 215, 255, 0.12);
+}
+
+.settings-appearance-preview {
+  overflow: hidden;
+  border: 1px solid rgba(119, 215, 255, 0.12);
+  border-radius: 8px;
+  background: var(--settings-scheme-background);
+  color: var(--settings-scheme-foreground);
+  font-family: var(
+    --settings-preview-font-family,
+    'SFMono-Regular',
+    Menlo,
+    Consolas,
+    'Liberation Mono',
+    monospace
+  );
+  font-size: var(--settings-preview-font-size, 14px);
+  font-weight: var(--settings-preview-font-weight, 400);
+}
+
+.settings-appearance-preview .settings-color-scheme-preview-body {
+  min-height: 96px;
+}
+
+.settings-appearance-preview .settings-color-scheme-preview-line {
+  font-size: 1em;
 }
 
 .settings-placeholder {
@@ -1428,7 +1473,16 @@ body {
   border-radius: 8px;
   background: var(--settings-scheme-background);
   color: var(--settings-scheme-foreground);
-  font-family: 'SFMono-Regular', Menlo, Consolas, 'Liberation Mono', monospace;
+  font-family: var(
+    --settings-preview-font-family,
+    'SFMono-Regular',
+    Menlo,
+    Consolas,
+    'Liberation Mono',
+    monospace
+  );
+  font-size: var(--settings-preview-font-size, 12px);
+  font-weight: var(--settings-preview-font-weight, 400);
 }
 
 .settings-color-scheme-preview-toolbar {
@@ -1457,7 +1511,7 @@ body {
 
 .settings-color-scheme-preview-line {
   color: var(--settings-scheme-foreground);
-  font-size: 12px;
+  font-size: 1em;
   line-height: 1.35;
 }
 
@@ -2088,20 +2142,17 @@ body {
     border-radius: 10px;
   }
 
-  .settings-tab-list {
-    gap: 16px;
-    overflow-x: auto;
-  }
-
   .settings-panel {
     min-height: 240px;
   }
 
   .settings-placeholder,
+  .settings-appearance,
   .settings-color-schemes {
     padding: 16px;
   }
 
+  .settings-appearance-controls,
   .settings-color-scheme-grid {
     grid-template-columns: minmax(0, 1fr);
   }

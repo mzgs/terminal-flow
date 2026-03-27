@@ -145,7 +145,7 @@ interface SshServerIconOption {
   value: SshServerIcon
 }
 
-type SettingsTabId = 'general' | 'colorSchemes'
+type TerminalFontFamilyId = string
 type TerminalColorSchemeId =
   | 'midnight-blue'
   | 'nord'
@@ -153,6 +153,7 @@ type TerminalColorSchemeId =
   | 'rose-pine'
   | 'ayu-mirage'
   | 'everforest'
+type TerminalFontWeight = '300' | '400' | '500' | '600' | '700'
 
 interface TerminalColorScheme {
   description: string
@@ -161,8 +162,22 @@ interface TerminalColorScheme {
   theme: ITheme
 }
 
+interface TerminalFontOption {
+  fontFamily: string
+  id: TerminalFontFamilyId
+  label: string
+}
+
+interface TerminalFontWeightOption {
+  description: string
+  label: string
+  value: TerminalFontWeight
+}
+
 const defaultTabTitle = '~'
 const maxPersistedTerminalOutputLines = 500
+const minTerminalFontSize = 10
+const maxTerminalFontSize = 24
 const searchRefreshDebounceMs = 120
 const defaultSshBrowserWidth = 320
 const maxSshBrowserWidth = 640
@@ -223,10 +238,6 @@ const sshBrowserVideoFileIconDescriptor: SshBrowserFileIconDescriptor = {
   icon: FileVideoCamera,
   toneClassName: 'ssh-browser-entry-icon-video'
 }
-const settingsTabs: Array<{ id: SettingsTabId; label: string }> = [
-  { id: 'general', label: 'General' },
-  { id: 'colorSchemes', label: 'Appearance' }
-]
 const sshBrowserFileIconByExactName = new Map<string, SshBrowserFileIconDescriptor>([
   ['.editorconfig', sshBrowserCodeFileIconDescriptor],
   ['.env', sshBrowserTextFileIconDescriptor],
@@ -516,6 +527,28 @@ const terminalColorSchemesById = new Map<TerminalColorSchemeId, TerminalColorSch
   terminalColorSchemes.map((colorScheme) => [colorScheme.id, colorScheme])
 )
 const terminalColorSchemeStorageKey = 'terminal.colorScheme'
+const terminalFontFamilyStorageKey = 'terminal.fontFamily'
+const terminalFontSizeStorageKey = 'terminal.fontSize'
+const terminalFontWeightStorageKey = 'terminal.fontWeight'
+const bundledTerminalFontFamilies = [
+  'JetBrains Mono Variable',
+  'Fira Code Variable',
+  'Cascadia Code Variable',
+  'IBM Plex Mono'
+] as const
+const defaultTerminalFontFamilyId = bundledTerminalFontFamilies[0]
+const defaultTerminalFontSize = 14
+const terminalFontWeightOptions: TerminalFontWeightOption[] = [
+  { description: 'Light', label: '300', value: '300' },
+  { description: 'Regular', label: '400', value: '400' },
+  { description: 'Medium', label: '500', value: '500' },
+  { description: 'Semibold', label: '600', value: '600' },
+  { description: 'Bold', label: '700', value: '700' }
+]
+const defaultTerminalFontWeight = terminalFontWeightOptions[1]?.value ?? '400'
+const terminalFontWeightOptionsByValue = new Map<TerminalFontWeight, TerminalFontWeightOption>(
+  terminalFontWeightOptions.map((fontWeightOption) => [fontWeightOption.value, fontWeightOption])
+)
 
 function getSearchTerminalTheme(theme: ITheme): ITheme {
   return {
@@ -546,6 +579,86 @@ function getStoredTerminalColorSchemeId(): TerminalColorSchemeId {
 
   return defaultTerminalColorScheme.id
 }
+
+function clampTerminalFontSize(fontSize: number): number {
+  return Math.min(Math.max(Math.round(fontSize), minTerminalFontSize), maxTerminalFontSize)
+}
+
+function getStoredTerminalFontFamilyId(): TerminalFontFamilyId {
+  if (typeof window === 'undefined') {
+    return defaultTerminalFontFamilyId
+  }
+
+  try {
+    const storedFontFamilyId = window.localStorage.getItem(terminalFontFamilyStorageKey)
+
+    if (storedFontFamilyId && storedFontFamilyId.trim() !== '') {
+      return storedFontFamilyId
+    }
+  } catch (error) {
+    console.error('Unable to load the saved terminal font family.', error)
+  }
+
+  return defaultTerminalFontFamilyId
+}
+
+function getStoredTerminalFontSize(): number {
+  if (typeof window === 'undefined') {
+    return defaultTerminalFontSize
+  }
+
+  try {
+    const storedFontSize = window.localStorage.getItem(terminalFontSizeStorageKey)
+    const parsedFontSize = Number(storedFontSize)
+
+    if (Number.isFinite(parsedFontSize)) {
+      return clampTerminalFontSize(parsedFontSize)
+    }
+  } catch (error) {
+    console.error('Unable to load the saved terminal font size.', error)
+  }
+
+  return defaultTerminalFontSize
+}
+
+function getStoredTerminalFontWeight(): TerminalFontWeight {
+  if (typeof window === 'undefined') {
+    return defaultTerminalFontWeight
+  }
+
+  try {
+    const storedFontWeight = window.localStorage.getItem(terminalFontWeightStorageKey)
+
+    if (
+      storedFontWeight &&
+      terminalFontWeightOptionsByValue.has(storedFontWeight as TerminalFontWeight)
+    ) {
+      return storedFontWeight as TerminalFontWeight
+    }
+  } catch (error) {
+    console.error('Unable to load the saved terminal font weight.', error)
+  }
+
+  return defaultTerminalFontWeight
+}
+
+function getTerminalFontFamilyCss(fontFamilyId: TerminalFontFamilyId): string {
+  const escapedFontFamily = fontFamilyId.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+  return `"${escapedFontFamily}", ui-monospace, monospace`
+}
+
+function createTerminalFontOption(fontFamilyId: TerminalFontFamilyId): TerminalFontOption {
+  return {
+    fontFamily: getTerminalFontFamilyCss(fontFamilyId),
+    id: fontFamilyId,
+    label: fontFamilyId.replace(/\s+Variable$/i, '')
+  }
+}
+
+const defaultTerminalFontOption = createTerminalFontOption(defaultTerminalFontFamilyId)
+const bundledTerminalFontOptions = bundledTerminalFontFamilies.map((fontFamily) =>
+  createTerminalFontOption(fontFamily)
+)
 const sshServerIconLabelOverrides: Record<string, string> = {
   almalinux: 'AlmaLinux',
   centos: 'CentOS',
@@ -637,8 +750,9 @@ const terminalOptions = {
   cursorBlink: true,
   cursorStyle: 'bar',
   cursorWidth: 2,
-  fontFamily: '"SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace',
-  fontSize: 14,
+  fontFamily: defaultTerminalFontOption.fontFamily,
+  fontSize: defaultTerminalFontSize,
+  fontWeight: defaultTerminalFontWeight,
   lineHeight: 1.35,
   macOptionIsMeta: true,
   scrollback: 5000,
@@ -1513,11 +1627,16 @@ interface SshConfigDialogProps {
 }
 
 interface SettingsDialogProps {
-  activeTab: SettingsTabId
+  availableTerminalFontOptions: TerminalFontOption[]
   onClose: () => void
   onTerminalColorSchemeChange: (colorSchemeId: TerminalColorSchemeId) => void
-  onTabChange: (tab: SettingsTabId) => void
+  onTerminalFontFamilyChange: (fontFamilyId: TerminalFontFamilyId) => void
+  onTerminalFontSizeChange: (fontSize: number) => void
+  onTerminalFontWeightChange: (fontWeight: TerminalFontWeight) => void
   selectedTerminalColorSchemeId: TerminalColorSchemeId
+  selectedTerminalFontFamilyId: TerminalFontFamilyId
+  selectedTerminalFontSize: number
+  selectedTerminalFontWeight: TerminalFontWeight
 }
 
 interface SshServerIconSelectProps {
@@ -1687,106 +1806,212 @@ function SshServerIconSelect({
   )
 }
 
-function GeneralSettingsPanel({
-  selectedTerminalColorScheme
-}: {
-  selectedTerminalColorScheme: TerminalColorScheme
-}): React.JSX.Element {
-  return (
-    <div className="settings-placeholder">
-      <p className="settings-placeholder-copy">
-        More workspace preferences will land here. The active terminal palette is{' '}
-        <span className="settings-placeholder-value">{selectedTerminalColorScheme.label}</span>, and
-        you can change it from the Appearance tab.
-      </p>
-    </div>
-  )
-}
-
-function ColorSchemesSettingsPanel({
+function AppearanceSettingsPanel({
+  availableTerminalFontOptions,
   onTerminalColorSchemeChange,
-  selectedTerminalColorSchemeId
+  onTerminalFontFamilyChange,
+  onTerminalFontSizeChange,
+  onTerminalFontWeightChange,
+  selectedTerminalColorSchemeId,
+  selectedTerminalFontFamilyId,
+  selectedTerminalFontSize,
+  selectedTerminalFontWeight
 }: {
+  availableTerminalFontOptions: TerminalFontOption[]
   onTerminalColorSchemeChange: (colorSchemeId: TerminalColorSchemeId) => void
+  onTerminalFontFamilyChange: (fontFamilyId: TerminalFontFamilyId) => void
+  onTerminalFontSizeChange: (fontSize: number) => void
+  onTerminalFontWeightChange: (fontWeight: TerminalFontWeight) => void
   selectedTerminalColorSchemeId: TerminalColorSchemeId
+  selectedTerminalFontFamilyId: TerminalFontFamilyId
+  selectedTerminalFontSize: number
+  selectedTerminalFontWeight: TerminalFontWeight
 }): React.JSX.Element {
-  return (
-    <div className="settings-color-schemes">
-      <p className="settings-color-schemes-note">
-        Pick a terminal palette. Changes apply to open tabs immediately and stay saved on this
-        device.
-      </p>
-      <div className="settings-color-scheme-grid">
-        {terminalColorSchemes.map((colorScheme) => {
-          const isSelected = colorScheme.id === selectedTerminalColorSchemeId
-          const previewStyle = {
-            '--settings-scheme-accent':
-              colorScheme.theme.blue ?? colorScheme.theme.cursor ?? colorScheme.theme.foreground,
-            '--settings-scheme-background': colorScheme.theme.background ?? '#000000',
-            '--settings-scheme-foreground': colorScheme.theme.foreground ?? '#ffffff',
-            '--settings-scheme-muted':
-              colorScheme.theme.brightBlack ?? colorScheme.theme.black ?? '#4c566a'
-          } as CSSProperties
-          const previewColors = [
-            colorScheme.theme.red ?? '#ff7b72',
-            colorScheme.theme.yellow ?? '#e6c15a',
-            colorScheme.theme.green ?? '#8fe388',
-            colorScheme.theme.blue ?? '#7aa2f7',
-            colorScheme.theme.magenta ?? '#c792ea',
-            colorScheme.theme.cyan ?? '#63d3ff'
-          ]
+  const selectedTerminalColorScheme =
+    terminalColorSchemesById.get(selectedTerminalColorSchemeId) ?? defaultTerminalColorScheme
+  const selectedTerminalFontOption =
+    availableTerminalFontOptions.find(
+      (fontOption) => fontOption.id === selectedTerminalFontFamilyId
+    ) ?? defaultTerminalFontOption
+  const previewStyle = {
+    '--settings-scheme-accent':
+      selectedTerminalColorScheme.theme.blue ??
+      selectedTerminalColorScheme.theme.cursor ??
+      selectedTerminalColorScheme.theme.foreground,
+    '--settings-scheme-background': selectedTerminalColorScheme.theme.background ?? '#000000',
+    '--settings-scheme-foreground': selectedTerminalColorScheme.theme.foreground ?? '#ffffff',
+    '--settings-scheme-muted':
+      selectedTerminalColorScheme.theme.brightBlack ??
+      selectedTerminalColorScheme.theme.black ??
+      '#4c566a',
+    '--settings-preview-font-family': selectedTerminalFontOption.fontFamily,
+    '--settings-preview-font-size': `${selectedTerminalFontSize}px`,
+    '--settings-preview-font-weight': selectedTerminalFontWeight
+  } as CSSProperties
 
-          return (
-            <button
-              aria-pressed={isSelected}
-              className={`settings-color-scheme-card${isSelected ? ' is-selected' : ''}`}
-              key={colorScheme.id}
-              onClick={() => onTerminalColorSchemeChange(colorScheme.id)}
-              type="button"
+  return (
+    <div className="settings-appearance">
+      <div className="settings-appearance-section">
+        <div className="settings-appearance-copy">
+          <h3 className="settings-appearance-title">Typography</h3>
+          <p className="settings-color-schemes-note">
+            Choose the terminal font family, size, and weight. Changes apply to open tabs
+            immediately and stay saved on this device.
+          </p>
+        </div>
+        <div className="settings-appearance-controls">
+          <label className="settings-field">
+            <span className="settings-field-label">Font</span>
+            <select
+              className="settings-field-input"
+              onChange={(event) =>
+                onTerminalFontFamilyChange(event.target.value as TerminalFontFamilyId)
+              }
+              value={selectedTerminalFontFamilyId}
             >
-              <div className="settings-color-scheme-card-header">
-                <div className="settings-color-scheme-copy">
-                  <span className="settings-color-scheme-name">{colorScheme.label}</span>
-                  <span className="settings-color-scheme-description">
-                    {colorScheme.description}
-                  </span>
-                </div>
-                <span
-                  aria-hidden="true"
-                  className={`settings-color-scheme-indicator${isSelected ? ' is-selected' : ''}`}
-                >
-                  {isSelected ? <Check className="settings-color-scheme-indicator-icon" /> : null}
-                </span>
-              </div>
-              <div className="settings-color-scheme-preview" style={previewStyle}>
-                <div className="settings-color-scheme-preview-toolbar">
-                  <span className="settings-color-scheme-preview-dot" />
-                  <span className="settings-color-scheme-preview-dot" />
-                  <span className="settings-color-scheme-preview-dot" />
-                </div>
-                <div className="settings-color-scheme-preview-body">
-                  <span className="settings-color-scheme-preview-line">
-                    mustafa@terminal{' '}
-                    <span className="settings-color-scheme-preview-path">~/app</span>
-                  </span>
-                  <span className="settings-color-scheme-preview-line">$ npm run dev</span>
-                  <span className="settings-color-scheme-preview-line is-muted">
-                    vite ready in 420ms
-                  </span>
-                </div>
-              </div>
-              <div className="settings-color-scheme-swatches">
-                {previewColors.map((color, index) => (
+              {availableTerminalFontOptions.map((fontOption) => (
+                <option key={fontOption.id} value={fontOption.id}>
+                  {fontOption.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="settings-field">
+            <span className="settings-field-label">Font size</span>
+            <input
+              className="settings-field-input"
+              max={maxTerminalFontSize}
+              min={minTerminalFontSize}
+              onChange={(event) => {
+                const nextFontSize = Number(event.target.value)
+
+                onTerminalFontSizeChange(
+                  Number.isFinite(nextFontSize)
+                    ? clampTerminalFontSize(nextFontSize)
+                    : defaultTerminalFontSize
+                )
+              }}
+              type="number"
+              value={selectedTerminalFontSize}
+            />
+          </label>
+          <label className="settings-field">
+            <span className="settings-field-label">Font weight</span>
+            <select
+              className="settings-field-input"
+              onChange={(event) =>
+                onTerminalFontWeightChange(event.target.value as TerminalFontWeight)
+              }
+              value={selectedTerminalFontWeight}
+            >
+              {terminalFontWeightOptions.map((fontWeightOption) => (
+                <option key={fontWeightOption.value} value={fontWeightOption.value}>
+                  {fontWeightOption.label} - {fontWeightOption.description}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <div className="settings-appearance-preview" style={previewStyle}>
+          <div className="settings-color-scheme-preview-toolbar">
+            <span className="settings-color-scheme-preview-dot" />
+            <span className="settings-color-scheme-preview-dot" />
+            <span className="settings-color-scheme-preview-dot" />
+          </div>
+          <div className="settings-color-scheme-preview-body">
+            <span className="settings-color-scheme-preview-line">
+              mustafa@terminal <span className="settings-color-scheme-preview-path">~/project</span>
+            </span>
+            <span className="settings-color-scheme-preview-line">$ npm run dev</span>
+            <span className="settings-color-scheme-preview-line is-muted">
+              watching for changes
+            </span>
+          </div>
+        </div>
+      </div>
+      <div className="settings-appearance-section">
+        <div className="settings-appearance-copy">
+          <h3 className="settings-appearance-title">Color scheme</h3>
+          <p className="settings-color-schemes-note">
+            Pick a terminal palette. Changes apply to open tabs immediately and stay saved on this
+            device.
+          </p>
+        </div>
+        <div className="settings-color-scheme-grid">
+          {terminalColorSchemes.map((colorScheme) => {
+            const isSelected = colorScheme.id === selectedTerminalColorSchemeId
+            const colorSchemePreviewStyle = {
+              '--settings-scheme-accent':
+                colorScheme.theme.blue ?? colorScheme.theme.cursor ?? colorScheme.theme.foreground,
+              '--settings-scheme-background': colorScheme.theme.background ?? '#000000',
+              '--settings-scheme-foreground': colorScheme.theme.foreground ?? '#ffffff',
+              '--settings-scheme-muted':
+                colorScheme.theme.brightBlack ?? colorScheme.theme.black ?? '#4c566a',
+              '--settings-preview-font-family': selectedTerminalFontOption.fontFamily,
+              '--settings-preview-font-size': `${selectedTerminalFontSize}px`,
+              '--settings-preview-font-weight': selectedTerminalFontWeight
+            } as CSSProperties
+            const previewColors = [
+              colorScheme.theme.red ?? '#ff7b72',
+              colorScheme.theme.yellow ?? '#e6c15a',
+              colorScheme.theme.green ?? '#8fe388',
+              colorScheme.theme.blue ?? '#7aa2f7',
+              colorScheme.theme.magenta ?? '#c792ea',
+              colorScheme.theme.cyan ?? '#63d3ff'
+            ]
+
+            return (
+              <button
+                aria-pressed={isSelected}
+                className={`settings-color-scheme-card${isSelected ? ' is-selected' : ''}`}
+                key={colorScheme.id}
+                onClick={() => onTerminalColorSchemeChange(colorScheme.id)}
+                type="button"
+              >
+                <div className="settings-color-scheme-card-header">
+                  <div className="settings-color-scheme-copy">
+                    <span className="settings-color-scheme-name">{colorScheme.label}</span>
+                    <span className="settings-color-scheme-description">
+                      {colorScheme.description}
+                    </span>
+                  </div>
                   <span
-                    className="settings-color-scheme-swatch"
-                    key={`${colorScheme.id}-${index}`}
-                    style={{ backgroundColor: color }}
-                  />
-                ))}
-              </div>
-            </button>
-          )
-        })}
+                    aria-hidden="true"
+                    className={`settings-color-scheme-indicator${isSelected ? ' is-selected' : ''}`}
+                  >
+                    {isSelected ? <Check className="settings-color-scheme-indicator-icon" /> : null}
+                  </span>
+                </div>
+                <div className="settings-color-scheme-preview" style={colorSchemePreviewStyle}>
+                  <div className="settings-color-scheme-preview-toolbar">
+                    <span className="settings-color-scheme-preview-dot" />
+                    <span className="settings-color-scheme-preview-dot" />
+                    <span className="settings-color-scheme-preview-dot" />
+                  </div>
+                  <div className="settings-color-scheme-preview-body">
+                    <span className="settings-color-scheme-preview-line">
+                      mustafa@terminal{' '}
+                      <span className="settings-color-scheme-preview-path">~/app</span>
+                    </span>
+                    <span className="settings-color-scheme-preview-line">$ npm run dev</span>
+                    <span className="settings-color-scheme-preview-line is-muted">
+                      vite ready in 420ms
+                    </span>
+                  </div>
+                </div>
+                <div className="settings-color-scheme-swatches">
+                  {previewColors.map((color, index) => (
+                    <span
+                      className="settings-color-scheme-swatch"
+                      key={`${colorScheme.id}-${index}`}
+                      style={{ backgroundColor: color }}
+                    />
+                  ))}
+                </div>
+              </button>
+            )
+          })}
+        </div>
       </div>
     </div>
   )
@@ -2170,15 +2395,18 @@ function SshConfigDialog({ onClose, serverConfig }: SshConfigDialogProps): React
 }
 
 function SettingsDialog({
-  activeTab,
+  availableTerminalFontOptions,
   onClose,
   onTerminalColorSchemeChange,
-  onTabChange,
-  selectedTerminalColorSchemeId
+  onTerminalFontFamilyChange,
+  onTerminalFontSizeChange,
+  onTerminalFontWeightChange,
+  selectedTerminalColorSchemeId,
+  selectedTerminalFontFamilyId,
+  selectedTerminalFontSize,
+  selectedTerminalFontWeight
 }: SettingsDialogProps): React.JSX.Element {
   const titleId = useId()
-  const selectedTerminalColorScheme =
-    terminalColorSchemesById.get(selectedTerminalColorSchemeId) ?? defaultTerminalColorScheme
 
   return (
     <Modal
@@ -2208,53 +2436,19 @@ function SettingsDialog({
           <X aria-hidden="true" className="settings-dialog-dismiss-icon" />
         </button>
       </div>
-      <div aria-label="Settings sections" className="settings-tab-list" role="tablist">
-        {settingsTabs.map((tab) => {
-          const isActive = tab.id === activeTab
-          const tabId = `settings-tab-${tab.id}`
-          const panelId = `settings-panel-${tab.id}`
-
-          return (
-            <button
-              key={tab.id}
-              aria-controls={panelId}
-              aria-selected={isActive}
-              className={`settings-tab${isActive ? ' is-active' : ''}`}
-              id={tabId}
-              onClick={() => onTabChange(tab.id)}
-              role="tab"
-              tabIndex={isActive ? 0 : -1}
-              type="button"
-            >
-              {tab.label}
-            </button>
-          )
-        })}
-      </div>
-      {settingsTabs.map((tab) => {
-        const isActive = tab.id === activeTab
-
-        return (
-          <section
-            aria-hidden={!isActive}
-            aria-labelledby={`settings-tab-${tab.id}`}
-            className={`settings-panel${isActive ? ' is-active' : ''}`}
-            hidden={!isActive}
-            id={`settings-panel-${tab.id}`}
-            key={tab.id}
-            role="tabpanel"
-          >
-            {tab.id === 'general' ? (
-              <GeneralSettingsPanel selectedTerminalColorScheme={selectedTerminalColorScheme} />
-            ) : (
-              <ColorSchemesSettingsPanel
-                onTerminalColorSchemeChange={onTerminalColorSchemeChange}
-                selectedTerminalColorSchemeId={selectedTerminalColorSchemeId}
-              />
-            )}
-          </section>
-        )
-      })}
+      <section className="settings-panel is-active" id="settings-panel-colorSchemes">
+        <AppearanceSettingsPanel
+          availableTerminalFontOptions={availableTerminalFontOptions}
+          onTerminalColorSchemeChange={onTerminalColorSchemeChange}
+          onTerminalFontFamilyChange={onTerminalFontFamilyChange}
+          onTerminalFontSizeChange={onTerminalFontSizeChange}
+          onTerminalFontWeightChange={onTerminalFontWeightChange}
+          selectedTerminalColorSchemeId={selectedTerminalColorSchemeId}
+          selectedTerminalFontFamilyId={selectedTerminalFontFamilyId}
+          selectedTerminalFontSize={selectedTerminalFontSize}
+          selectedTerminalFontWeight={selectedTerminalFontWeight}
+        />
+      </section>
     </Modal>
   )
 }
@@ -2281,9 +2475,16 @@ function TerminalApp(): React.JSX.Element {
   )
   const [sshUploadProgress, setSshUploadProgress] = useState<SshUploadProgressEvent | null>(null)
   const [isSettingsDialogOpen, setIsSettingsDialogOpen] = useState(false)
-  const [activeSettingsTab, setActiveSettingsTab] = useState<SettingsTabId>('colorSchemes')
   const [selectedTerminalColorSchemeId, setSelectedTerminalColorSchemeId] =
     useState<TerminalColorSchemeId>(() => getStoredTerminalColorSchemeId())
+  const [selectedTerminalFontFamilyId, setSelectedTerminalFontFamilyId] =
+    useState<TerminalFontFamilyId>(() => getStoredTerminalFontFamilyId())
+  const [selectedTerminalFontSize, setSelectedTerminalFontSize] = useState<number>(() =>
+    getStoredTerminalFontSize()
+  )
+  const [selectedTerminalFontWeight, setSelectedTerminalFontWeight] = useState<TerminalFontWeight>(
+    () => getStoredTerminalFontWeight()
+  )
   const [isSshConfigDialogOpen, setIsSshConfigDialogOpen] = useState(false)
   const [sshServerBeingEdited, setSshServerBeingEdited] = useState<SshServerConfig | null>(null)
   const [sshServers, setSshServers] = useState<SshServerConfig[]>([])
@@ -2324,6 +2525,11 @@ function TerminalApp(): React.JSX.Element {
       : 'platform-default'
   const selectedTerminalColorScheme =
     terminalColorSchemesById.get(selectedTerminalColorSchemeId) ?? defaultTerminalColorScheme
+  const availableTerminalFontOptions = bundledTerminalFontOptions
+  const selectedTerminalFontOption =
+    availableTerminalFontOptions.find(
+      (fontOption) => fontOption.id === selectedTerminalFontFamilyId
+    ) ?? defaultTerminalFontOption
 
   const updateTab = useCallback((tabId: string, updater: (tab: TabRecord) => TabRecord): void => {
     setTabs((currentTabs) =>
@@ -2785,6 +2991,40 @@ function TerminalApp(): React.JSX.Element {
     })
   }, [])
 
+  const applyTerminalTypography = useCallback(
+    (fontFamily: string, fontSize: number, fontWeight: TerminalFontWeight): void => {
+      const refreshTerminalTypography = (): void => {
+        for (const runtime of runtimesRef.current.values()) {
+          if (runtime.disposed) {
+            continue
+          }
+
+          runtime.terminal.options.fontFamily = fontFamily
+          runtime.terminal.options.fontSize = fontSize
+          runtime.terminal.options.fontWeight = fontWeight
+          runtime.terminal.clearTextureAtlas()
+          runtime.terminal.refresh(0, runtime.terminal.rows - 1)
+        }
+
+        syncActiveTabLayout(activeTabIdRef.current)
+      }
+
+      refreshTerminalTypography()
+
+      if (typeof document !== 'undefined' && typeof document.fonts?.load === 'function') {
+        void document.fonts
+          .load(`${fontWeight} ${fontSize}px ${fontFamily}`, 'BESbqw09@$')
+          .then(() => {
+            refreshTerminalTypography()
+          })
+          .catch((error) => {
+            console.error(`Unable to finish loading terminal font "${fontFamily}".`, error)
+          })
+      }
+    },
+    [syncActiveTabLayout]
+  )
+
   const syncTabStripPosition = useCallback((tabId: string | null): void => {
     if (!tabId) {
       return
@@ -3117,6 +3357,9 @@ function TerminalApp(): React.JSX.Element {
 
       const terminal = new Terminal({
         ...terminalOptions,
+        fontFamily: selectedTerminalFontOption.fontFamily,
+        fontSize: selectedTerminalFontSize,
+        fontWeight: selectedTerminalFontWeight,
         theme: getTerminalThemeForSearchState(isSearchOpenRef.current)
       })
       const fitAddon = new FitAddon()
@@ -3179,6 +3422,9 @@ function TerminalApp(): React.JSX.Element {
       finalizeTabConnection,
       getTerminalThemeForSearchState,
       queueSearchRefresh,
+      selectedTerminalFontOption,
+      selectedTerminalFontSize,
+      selectedTerminalFontWeight,
       syncActiveTabLayout
     ]
   )
@@ -3214,12 +3460,35 @@ function TerminalApp(): React.JSX.Element {
   }, [applyTerminalTheme, getTerminalThemeForSearchState, isSearchOpen])
 
   useEffect(() => {
+    applyTerminalTypography(
+      selectedTerminalFontOption.fontFamily,
+      selectedTerminalFontSize,
+      selectedTerminalFontWeight
+    )
+  }, [
+    applyTerminalTypography,
+    selectedTerminalFontOption,
+    selectedTerminalFontSize,
+    selectedTerminalFontWeight
+  ])
+
+  useEffect(() => {
     try {
       window.localStorage.setItem(terminalColorSchemeStorageKey, selectedTerminalColorSchemeId)
     } catch (error) {
       console.error('Unable to save the selected terminal color scheme.', error)
     }
   }, [selectedTerminalColorSchemeId])
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(terminalFontFamilyStorageKey, selectedTerminalFontFamilyId)
+      window.localStorage.setItem(terminalFontSizeStorageKey, String(selectedTerminalFontSize))
+      window.localStorage.setItem(terminalFontWeightStorageKey, selectedTerminalFontWeight)
+    } catch (error) {
+      console.error('Unable to save the selected terminal typography settings.', error)
+    }
+  }, [selectedTerminalFontFamilyId, selectedTerminalFontSize, selectedTerminalFontWeight])
 
   useEffect(() => {
     if (!activeTabId) {
@@ -4051,9 +4320,8 @@ function TerminalApp(): React.JSX.Element {
     setSshServerBeingEdited(null)
   }, [])
 
-  const handleOpenSettingsDialog = useCallback((tab: SettingsTabId = 'colorSchemes'): void => {
+  const handleOpenSettingsDialog = useCallback((): void => {
     setIsSshMenuOpen(false)
-    setActiveSettingsTab(tab)
     setIsSettingsDialogOpen(true)
   }, [])
 
@@ -5394,11 +5662,16 @@ function TerminalApp(): React.JSX.Element {
       </section>
       {isSettingsDialogOpen ? (
         <SettingsDialog
-          activeTab={activeSettingsTab}
+          availableTerminalFontOptions={availableTerminalFontOptions}
           onClose={handleCloseSettingsDialog}
           onTerminalColorSchemeChange={setSelectedTerminalColorSchemeId}
-          onTabChange={setActiveSettingsTab}
+          onTerminalFontFamilyChange={setSelectedTerminalFontFamilyId}
+          onTerminalFontSizeChange={setSelectedTerminalFontSize}
+          onTerminalFontWeightChange={setSelectedTerminalFontWeight}
           selectedTerminalColorSchemeId={selectedTerminalColorSchemeId}
+          selectedTerminalFontFamilyId={selectedTerminalFontOption.id}
+          selectedTerminalFontSize={selectedTerminalFontSize}
+          selectedTerminalFontWeight={selectedTerminalFontWeight}
         />
       ) : null}
       {isSshConfigDialogOpen ? (

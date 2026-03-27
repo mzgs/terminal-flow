@@ -154,10 +154,10 @@ function getExecutableCandidates(command: string): string[] {
 
     return Array.from(
       new Set([
-        ...((process.env.PATH ?? '')
+        ...(process.env.PATH ?? '')
           .split(delimiter)
           .filter((entry) => entry !== '')
-          .flatMap((entry) => extensions.map((extension) => join(entry, `${command}${extension}`)))),
+          .flatMap((entry) => extensions.map((extension) => join(entry, `${command}${extension}`))),
         ...extensions.map((extension) =>
           join(systemRoot, 'System32', 'OpenSSH', `${command}${extension}`)
         )
@@ -167,10 +167,10 @@ function getExecutableCandidates(command: string): string[] {
 
   return Array.from(
     new Set([
-      ...((process.env.PATH ?? '')
+      ...(process.env.PATH ?? '')
         .split(delimiter)
         .filter((entry) => entry !== '')
-        .map((entry) => join(entry, command))),
+        .map((entry) => join(entry, command)),
       `/usr/bin/${command}`,
       `/bin/${command}`,
       `/usr/local/bin/${command}`,
