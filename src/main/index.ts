@@ -1549,6 +1549,38 @@ function parseSettingBoolean(value: unknown): boolean | null {
   return null
 }
 
+function normalizeTerminalThemeOverrideColor(color: unknown): string | null {
+  if (typeof color !== 'string') {
+    return null
+  }
+
+  const normalizedColor = color.trim().toLocaleLowerCase()
+  const match = normalizedColor.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i)
+
+  if (!match) {
+    return null
+  }
+
+  const hexColor = match[1]
+
+  if (hexColor.length === 3) {
+    return `#${hexColor
+      .split('')
+      .map((channel) => `${channel}${channel}`)
+      .join('')}`
+  }
+
+  return `#${hexColor}`
+}
+
+function normalizeTerminalCursorColor(cursorColor: unknown): string | null {
+  return normalizeTerminalThemeOverrideColor(cursorColor)
+}
+
+function normalizeTerminalSelectionColor(selectionColor: unknown): string | null {
+  return normalizeTerminalThemeOverrideColor(selectionColor)
+}
+
 function parsePersistedMainWindowState(value: unknown): PersistedMainWindowState | null {
   if (!value || typeof value !== 'object') {
     return null
@@ -1649,6 +1681,8 @@ function parsePersistedSettings(value: unknown): AppSettings | null {
     terminal: {
       colorSchemeId: terminalRecord.colorSchemeId.trim(),
       cursorBlink: cursorBlinkValue ?? defaultTerminalCursorBlink,
+      cursorColor: normalizeTerminalCursorColor(terminalRecord.cursorColor),
+      selectionColor: normalizeTerminalSelectionColor(terminalRecord.selectionColor),
       cursorStyle,
       cursorWidth: clampTerminalCursorWidth(cursorWidthValue ?? defaultTerminalCursorWidth),
       fontFamilyId: terminalRecord.fontFamilyId.trim(),

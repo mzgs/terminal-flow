@@ -9,6 +9,8 @@ export interface GeneralSettings {
 export interface TerminalAppearanceSettings {
   colorSchemeId: string
   cursorBlink: boolean
+  cursorColor: string | null
+  selectionColor: string | null
   cursorStyle: TerminalCursorStyle
   cursorWidth: number
   fontFamilyId: string

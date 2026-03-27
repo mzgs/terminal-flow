@@ -178,6 +178,12 @@ interface TerminalFontWeightOption {
   value: TerminalFontWeight
 }
 
+interface RgbColor {
+  blue: number
+  green: number
+  red: number
+}
+
 const defaultTabTitle = '~'
 const maxPersistedTerminalOutputLines = 500
 const minTerminalFontSize = 10
@@ -646,6 +652,38 @@ function normalizeTerminalCursorWidth(cursorWidth: number): number {
   return defaultTerminalCursorWidth
 }
 
+function normalizeTerminalThemeOverrideColor(color: string | null | undefined): string | null {
+  if (typeof color !== 'string') {
+    return null
+  }
+
+  const normalizedColor = color.trim().toLocaleLowerCase()
+  const match = normalizedColor.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i)
+
+  if (!match) {
+    return null
+  }
+
+  const hexColor = match[1]
+
+  if (hexColor.length === 3) {
+    return `#${hexColor
+      .split('')
+      .map((channel) => `${channel}${channel}`)
+      .join('')}`
+  }
+
+  return `#${hexColor}`
+}
+
+function normalizeTerminalCursorColor(cursorColor: string | null | undefined): string | null {
+  return normalizeTerminalThemeOverrideColor(cursorColor)
+}
+
+function normalizeTerminalSelectionColor(selectionColor: string | null | undefined): string | null {
+  return normalizeTerminalThemeOverrideColor(selectionColor)
+}
+
 function clampTerminalLineHeight(lineHeight: number): number {
   const clampedLineHeight = Math.min(
     Math.max(lineHeight, minTerminalLineHeight),
@@ -660,6 +698,121 @@ function normalizeTerminalLineHeight(lineHeight: number): number {
   }
 
   return defaultTerminalLineHeight
+}
+
+function parseColorToRgb(color: string | null | undefined): RgbColor | null {
+  if (typeof color !== 'string') {
+    return null
+  }
+
+  const normalizedColor = color.trim()
+  const hexMatch = normalizedColor.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i)
+
+  if (hexMatch) {
+    const hexColor = hexMatch[1]
+
+    if (hexColor.length === 3) {
+      return {
+        blue: Number.parseInt(`${hexColor[2]}${hexColor[2]}`, 16),
+        green: Number.parseInt(`${hexColor[1]}${hexColor[1]}`, 16),
+        red: Number.parseInt(`${hexColor[0]}${hexColor[0]}`, 16)
+      }
+    }
+
+    return {
+      blue: Number.parseInt(hexColor.slice(4, 6), 16),
+      green: Number.parseInt(hexColor.slice(2, 4), 16),
+      red: Number.parseInt(hexColor.slice(0, 2), 16)
+    }
+  }
+
+  const rgbMatch = normalizedColor.match(/^rgba?\(([^)]+)\)$/i)
+
+  if (!rgbMatch) {
+    return null
+  }
+
+  const channels = rgbMatch[1]
+    .split(',')
+    .slice(0, 3)
+    .map((channel) => Number.parseFloat(channel.trim()))
+
+  if (
+    channels.length !== 3 ||
+    channels.some((channel) => !Number.isFinite(channel) || channel < 0 || channel > 255)
+  ) {
+    return null
+  }
+
+  return {
+    blue: Math.round(channels[2]),
+    green: Math.round(channels[1]),
+    red: Math.round(channels[0])
+  }
+}
+
+function getHexColorInputValue(color: string | null | undefined, fallbackColor: string): string {
+  const rgbColor = parseColorToRgb(color)
+
+  if (!rgbColor) {
+    return fallbackColor
+  }
+
+  return `#${[rgbColor.red, rgbColor.green, rgbColor.blue]
+    .map((channel) => channel.toString(16).padStart(2, '0'))
+    .join('')}`
+}
+
+function applyAlphaToColor(color: string | null | undefined, alpha: number): string {
+  const rgbColor = parseColorToRgb(color)
+
+  if (!rgbColor) {
+    return color ?? defaultTerminalTheme.background ?? '#000000'
+  }
+
+  return `rgba(${rgbColor.red}, ${rgbColor.green}, ${rgbColor.blue}, ${alpha})`
+}
+
+function getReadableOverlayForeground(
+  color: string,
+  fallbackForeground: string | null | undefined
+): string {
+  const rgbColor = parseColorToRgb(color)
+
+  if (!rgbColor) {
+    return fallbackForeground ?? '#000000'
+  }
+
+  const relativeLuminance =
+    (0.2126 * rgbColor.red + 0.7152 * rgbColor.green + 0.0722 * rgbColor.blue) / 255
+
+  return relativeLuminance >= 0.55 ? '#000000' : '#ffffff'
+}
+
+function getConfiguredTerminalTheme(
+  baseTheme: ITheme,
+  cursorColor: string | null,
+  selectionColor: string | null
+): ITheme {
+  const normalizedCursorColor = normalizeTerminalCursorColor(cursorColor)
+  const normalizedSelectionColor = normalizeTerminalSelectionColor(selectionColor)
+
+  return {
+    ...baseTheme,
+    cursor: normalizedCursorColor ?? baseTheme.cursor ?? baseTheme.foreground,
+    cursorAccent: normalizedCursorColor
+      ? getReadableOverlayForeground(normalizedCursorColor, baseTheme.cursorAccent)
+      : baseTheme.cursorAccent,
+    selectionBackground: normalizedSelectionColor
+      ? applyAlphaToColor(normalizedSelectionColor, 0.34)
+      : baseTheme.selectionBackground,
+    selectionForeground: normalizedSelectionColor
+      ? getReadableOverlayForeground(normalizedSelectionColor, baseTheme.foreground)
+      : baseTheme.selectionForeground,
+    selectionInactiveBackground: normalizedSelectionColor
+      ? applyAlphaToColor(normalizedSelectionColor, 0.22)
+      : baseTheme.selectionInactiveBackground
+  }
 }
 
 function normalizeAppStartupMode(startupMode: string | null | undefined): AppStartupMode {
@@ -681,6 +834,8 @@ function createAppSettings({
   startupMode,
   terminalColorSchemeId,
   terminalCursorBlink,
+  terminalCursorColor,
+  terminalSelectionColor,
   terminalCursorStyle,
   terminalCursorWidth,
   terminalFontFamilyId,
@@ -692,6 +847,8 @@ function createAppSettings({
   startupMode: AppStartupMode
   terminalColorSchemeId: TerminalColorSchemeId
   terminalCursorBlink: boolean
+  terminalCursorColor: string | null
+  terminalSelectionColor: string | null
   terminalCursorStyle: TerminalCursorStyle
   terminalCursorWidth: number
   terminalFontFamilyId: TerminalFontFamilyId
@@ -707,6 +864,8 @@ function createAppSettings({
     terminal: {
       colorSchemeId: terminalColorSchemeId,
       cursorBlink: terminalCursorBlink,
+      cursorColor: normalizeTerminalCursorColor(terminalCursorColor),
+      selectionColor: normalizeTerminalSelectionColor(terminalSelectionColor),
       cursorStyle: normalizeTerminalCursorStyle(terminalCursorStyle),
       cursorWidth: normalizeTerminalCursorWidth(terminalCursorWidth),
       fontFamilyId: terminalFontFamilyId,
@@ -723,6 +882,8 @@ function getNormalizedAppSettings(settings: AppSettings): {
   startupMode: AppStartupMode
   terminalColorSchemeId: TerminalColorSchemeId
   terminalCursorBlink: boolean
+  terminalCursorColor: string | null
+  terminalSelectionColor: string | null
   terminalCursorStyle: TerminalCursorStyle
   terminalCursorWidth: number
   terminalFontFamilyId: TerminalFontFamilyId
@@ -740,6 +901,8 @@ function getNormalizedAppSettings(settings: AppSettings): {
       typeof settings.terminal.cursorBlink === 'boolean'
         ? settings.terminal.cursorBlink
         : defaultTerminalCursorBlink,
+    terminalCursorColor: normalizeTerminalCursorColor(settings.terminal.cursorColor),
+    terminalSelectionColor: normalizeTerminalSelectionColor(settings.terminal.selectionColor),
     terminalCursorStyle: normalizeTerminalCursorStyle(settings.terminal.cursorStyle),
     terminalCursorWidth: normalizeTerminalCursorWidth(settings.terminal.cursorWidth),
     terminalFontFamilyId: normalizeTerminalFontFamilyId(settings.terminal.fontFamilyId),
@@ -1772,6 +1935,8 @@ interface SettingsDialogProps {
   onStartupModeChange: (startupMode: AppStartupMode) => void
   onTerminalColorSchemeChange: (colorSchemeId: TerminalColorSchemeId) => void
   onTerminalCursorBlinkChange: (cursorBlink: boolean) => void
+  onTerminalCursorColorChange: (cursorColor: string | null) => void
+  onTerminalSelectionColorChange: (selectionColor: string | null) => void
   onTerminalCursorStyleChange: (cursorStyle: TerminalCursorStyle) => void
   onTerminalCursorWidthChange: (cursorWidth: number) => void
   onTerminalFontFamilyChange: (fontFamilyId: TerminalFontFamilyId) => void
@@ -1781,6 +1946,8 @@ interface SettingsDialogProps {
   selectedStartupMode: AppStartupMode
   selectedTerminalColorSchemeId: TerminalColorSchemeId
   selectedTerminalCursorBlink: boolean
+  selectedTerminalCursorColor: string | null
+  selectedTerminalSelectionColor: string | null
   selectedTerminalCursorStyle: TerminalCursorStyle
   selectedTerminalCursorWidth: number
   selectedTerminalFontFamilyId: TerminalFontFamilyId
@@ -2107,13 +2274,61 @@ function GeneralSettingsPanel({
   )
 }
 
+function TerminalPreviewCursor({
+  cursorStyle,
+  cursorWidth
+}: {
+  cursorStyle: TerminalCursorStyle
+  cursorWidth: number
+}): React.JSX.Element {
+  if (cursorStyle === 'block') {
+    return (
+      <span
+        aria-hidden="true"
+        className="settings-color-scheme-preview-cursor settings-color-scheme-preview-cursor--block"
+      >
+        A
+      </span>
+    )
+  }
+
+  if (cursorStyle === 'underline') {
+    return (
+      <span
+        aria-hidden="true"
+        className="settings-color-scheme-preview-cursor settings-color-scheme-preview-cursor--underline"
+      >
+        {'\u00a0'}
+      </span>
+    )
+  }
+
+  return (
+    <span
+      aria-hidden="true"
+      className="settings-color-scheme-preview-cursor settings-color-scheme-preview-cursor--bar"
+      style={
+        {
+          '--settings-preview-cursor-width': `${cursorWidth}px`
+        } as CSSProperties
+      }
+    />
+  )
+}
+
 function AppearanceSettingsPanel({
   availableTerminalFontOptions,
   onTerminalColorSchemeChange,
+  onTerminalCursorColorChange,
+  onTerminalSelectionColorChange,
   onTerminalFontFamilyChange,
   onTerminalFontSizeChange,
   onTerminalFontWeightChange,
   selectedTerminalColorSchemeId,
+  selectedTerminalCursorColor,
+  selectedTerminalSelectionColor,
+  selectedTerminalCursorStyle,
+  selectedTerminalCursorWidth,
   selectedTerminalFontFamilyId,
   selectedTerminalFontSize,
   selectedTerminalFontWeight,
@@ -2121,10 +2336,16 @@ function AppearanceSettingsPanel({
 }: {
   availableTerminalFontOptions: TerminalFontOption[]
   onTerminalColorSchemeChange: (colorSchemeId: TerminalColorSchemeId) => void
+  onTerminalCursorColorChange: (cursorColor: string | null) => void
+  onTerminalSelectionColorChange: (selectionColor: string | null) => void
   onTerminalFontFamilyChange: (fontFamilyId: TerminalFontFamilyId) => void
   onTerminalFontSizeChange: (fontSize: number) => void
   onTerminalFontWeightChange: (fontWeight: TerminalFontWeight) => void
   selectedTerminalColorSchemeId: TerminalColorSchemeId
+  selectedTerminalCursorColor: string | null
+  selectedTerminalSelectionColor: string | null
+  selectedTerminalCursorStyle: TerminalCursorStyle
+  selectedTerminalCursorWidth: number
   selectedTerminalFontFamilyId: TerminalFontFamilyId
   selectedTerminalFontSize: number
   selectedTerminalFontWeight: TerminalFontWeight
@@ -2136,17 +2357,35 @@ function AppearanceSettingsPanel({
     availableTerminalFontOptions.find(
       (fontOption) => fontOption.id === selectedTerminalFontFamilyId
     ) ?? defaultTerminalFontOption
+  const selectedTerminalTheme = getConfiguredTerminalTheme(
+    selectedTerminalColorScheme.theme,
+    selectedTerminalCursorColor,
+    selectedTerminalSelectionColor
+  )
+  const selectedCursorColorInputValue =
+    normalizeTerminalCursorColor(selectedTerminalTheme.cursor) ??
+    normalizeTerminalCursorColor(selectedTerminalColorScheme.theme.cursor) ??
+    normalizeTerminalCursorColor(defaultTerminalTheme.cursor) ??
+    '#f5f5f5'
+  const selectedSelectionColorInputValue =
+    normalizeTerminalSelectionColor(selectedTerminalSelectionColor) ??
+    getHexColorInputValue(selectedTerminalColorScheme.theme.selectionBackground, '#7aa2f7')
   const previewStyle = {
     '--settings-scheme-accent':
       selectedTerminalColorScheme.theme.blue ??
-      selectedTerminalColorScheme.theme.cursor ??
-      selectedTerminalColorScheme.theme.foreground,
-    '--settings-scheme-background': selectedTerminalColorScheme.theme.background ?? '#000000',
-    '--settings-scheme-foreground': selectedTerminalColorScheme.theme.foreground ?? '#ffffff',
+      selectedTerminalTheme.cursor ??
+      selectedTerminalTheme.foreground,
+    '--settings-scheme-background': selectedTerminalTheme.background ?? '#000000',
+    '--settings-scheme-cursor': selectedTerminalTheme.cursor ?? selectedTerminalTheme.foreground,
+    '--settings-scheme-cursor-accent':
+      selectedTerminalTheme.cursorAccent ?? selectedTerminalTheme.background ?? '#000000',
+    '--settings-scheme-foreground': selectedTerminalTheme.foreground ?? '#ffffff',
     '--settings-scheme-muted':
-      selectedTerminalColorScheme.theme.brightBlack ??
-      selectedTerminalColorScheme.theme.black ??
-      '#4c566a',
+      selectedTerminalTheme.brightBlack ?? selectedTerminalTheme.black ?? '#4c566a',
+    '--settings-scheme-selection-background':
+      selectedTerminalTheme.selectionBackground ?? 'rgba(255, 255, 255, 0.18)',
+    '--settings-scheme-selection-foreground':
+      selectedTerminalTheme.selectionForeground ?? selectedTerminalTheme.foreground ?? '#ffffff',
     '--settings-preview-font-family': selectedTerminalFontOption.fontFamily,
     '--settings-preview-line-height': selectedTerminalLineHeight,
     '--settings-preview-font-size': `${selectedTerminalFontSize}px`,
@@ -2226,11 +2465,101 @@ function AppearanceSettingsPanel({
             <span className="settings-color-scheme-preview-line">
               mustafa@terminal <span className="settings-color-scheme-preview-path">~/project</span>
             </span>
-            <span className="settings-color-scheme-preview-line">$ npm run dev</span>
+            <span className="settings-color-scheme-preview-line">
+              $ npm run dev
+              <TerminalPreviewCursor
+                cursorStyle={selectedTerminalCursorStyle}
+                cursorWidth={selectedTerminalCursorWidth}
+              />
+            </span>
             <span className="settings-color-scheme-preview-line is-muted">
-              watching for changes
+              watching <span className="settings-color-scheme-preview-selection">for changes</span>
             </span>
           </div>
+        </div>
+      </div>
+      <div className="settings-appearance-section">
+        <div className="settings-appearance-copy">
+          <h3 className="settings-appearance-title">Cursor and selection</h3>
+          <p className="settings-color-schemes-note">
+            Keep the cursor and text selection on palette defaults or pin both to fixed colors.
+          </p>
+        </div>
+        <div className="settings-appearance-controls settings-appearance-controls--compact">
+          <label className="settings-field">
+            <span className="settings-field-label">Cursor</span>
+            <span className="settings-field-label settings-field-label--sr-only">Cursor color</span>
+            <div className="settings-inline-control">
+              <input
+                aria-label="Cursor color"
+                className="settings-field-input settings-field-input--color"
+                disabled={selectedTerminalCursorColor === null}
+                onChange={(event) =>
+                  onTerminalCursorColorChange(
+                    normalizeTerminalCursorColor(event.target.value) ??
+                      selectedCursorColorInputValue
+                  )
+                }
+                type="color"
+                value={selectedCursorColorInputValue}
+              />
+              <select
+                className="settings-field-input"
+                onChange={(event) => {
+                  if (event.target.value === 'custom') {
+                    onTerminalCursorColorChange(
+                      selectedTerminalCursorColor ?? selectedCursorColorInputValue
+                    )
+                    return
+                  }
+
+                  onTerminalCursorColorChange(null)
+                }}
+                value={selectedTerminalCursorColor ? 'custom' : 'palette'}
+              >
+                <option value="palette">Use palette default</option>
+                <option value="custom">Use custom color</option>
+              </select>
+            </div>
+          </label>
+          <label className="settings-field">
+            <span className="settings-field-label">Selection</span>
+            <span className="settings-field-label settings-field-label--sr-only">
+              Selection color
+            </span>
+            <div className="settings-inline-control">
+              <input
+                aria-label="Selection color"
+                className="settings-field-input settings-field-input--color"
+                disabled={selectedTerminalSelectionColor === null}
+                onChange={(event) =>
+                  onTerminalSelectionColorChange(
+                    normalizeTerminalSelectionColor(event.target.value) ??
+                      selectedSelectionColorInputValue
+                  )
+                }
+                type="color"
+                value={selectedSelectionColorInputValue}
+              />
+              <select
+                className="settings-field-input"
+                onChange={(event) => {
+                  if (event.target.value === 'custom') {
+                    onTerminalSelectionColorChange(
+                      selectedTerminalSelectionColor ?? selectedSelectionColorInputValue
+                    )
+                    return
+                  }
+
+                  onTerminalSelectionColorChange(null)
+                }}
+                value={selectedTerminalSelectionColor ? 'custom' : 'palette'}
+              >
+                <option value="palette">Use palette default</option>
+                <option value="custom">Use custom color</option>
+              </select>
+            </div>
+          </label>
         </div>
       </div>
       <div className="settings-appearance-section">
@@ -2244,13 +2573,34 @@ function AppearanceSettingsPanel({
         <div className="settings-color-scheme-grid">
           {terminalColorSchemes.map((colorScheme) => {
             const isSelected = colorScheme.id === selectedTerminalColorSchemeId
+            const configuredColorSchemeTheme = getConfiguredTerminalTheme(
+              colorScheme.theme,
+              selectedTerminalCursorColor,
+              selectedTerminalSelectionColor
+            )
             const colorSchemePreviewStyle = {
               '--settings-scheme-accent':
-                colorScheme.theme.blue ?? colorScheme.theme.cursor ?? colorScheme.theme.foreground,
-              '--settings-scheme-background': colorScheme.theme.background ?? '#000000',
-              '--settings-scheme-foreground': colorScheme.theme.foreground ?? '#ffffff',
+                colorScheme.theme.blue ??
+                configuredColorSchemeTheme.cursor ??
+                configuredColorSchemeTheme.foreground,
+              '--settings-scheme-background': configuredColorSchemeTheme.background ?? '#000000',
+              '--settings-scheme-cursor':
+                configuredColorSchemeTheme.cursor ?? configuredColorSchemeTheme.foreground,
+              '--settings-scheme-cursor-accent':
+                configuredColorSchemeTheme.cursorAccent ??
+                configuredColorSchemeTheme.background ??
+                '#000000',
+              '--settings-scheme-foreground': configuredColorSchemeTheme.foreground ?? '#ffffff',
               '--settings-scheme-muted':
-                colorScheme.theme.brightBlack ?? colorScheme.theme.black ?? '#4c566a',
+                configuredColorSchemeTheme.brightBlack ??
+                configuredColorSchemeTheme.black ??
+                '#4c566a',
+              '--settings-scheme-selection-background':
+                configuredColorSchemeTheme.selectionBackground ?? 'rgba(255, 255, 255, 0.18)',
+              '--settings-scheme-selection-foreground':
+                configuredColorSchemeTheme.selectionForeground ??
+                configuredColorSchemeTheme.foreground ??
+                '#ffffff',
               '--settings-preview-font-family': selectedTerminalFontOption.fontFamily,
               '--settings-preview-line-height': selectedTerminalLineHeight,
               '--settings-preview-font-size': `${selectedTerminalFontSize}px`,
@@ -2298,9 +2648,18 @@ function AppearanceSettingsPanel({
                       mustafa@terminal{' '}
                       <span className="settings-color-scheme-preview-path">~/app</span>
                     </span>
-                    <span className="settings-color-scheme-preview-line">$ npm run dev</span>
+                    <span className="settings-color-scheme-preview-line">
+                      $ npm run dev
+                      <TerminalPreviewCursor
+                        cursorStyle={selectedTerminalCursorStyle}
+                        cursorWidth={selectedTerminalCursorWidth}
+                      />
+                    </span>
                     <span className="settings-color-scheme-preview-line is-muted">
-                      vite ready in 420ms
+                      vite{' '}
+                      <span className="settings-color-scheme-preview-selection">
+                        ready in 420ms
+                      </span>
                     </span>
                   </div>
                 </div>
@@ -2725,6 +3084,8 @@ function SettingsDialog({
   onStartupModeChange,
   onTerminalColorSchemeChange,
   onTerminalCursorBlinkChange,
+  onTerminalCursorColorChange,
+  onTerminalSelectionColorChange,
   onTerminalCursorStyleChange,
   onTerminalCursorWidthChange,
   onTerminalFontFamilyChange,
@@ -2734,6 +3095,8 @@ function SettingsDialog({
   selectedStartupMode,
   selectedTerminalColorSchemeId,
   selectedTerminalCursorBlink,
+  selectedTerminalCursorColor,
+  selectedTerminalSelectionColor,
   selectedTerminalCursorStyle,
   selectedTerminalCursorWidth,
   selectedTerminalFontFamilyId,
@@ -2836,10 +3199,16 @@ function SettingsDialog({
           <AppearanceSettingsPanel
             availableTerminalFontOptions={availableTerminalFontOptions}
             onTerminalColorSchemeChange={onTerminalColorSchemeChange}
+            onTerminalCursorColorChange={onTerminalCursorColorChange}
+            onTerminalSelectionColorChange={onTerminalSelectionColorChange}
             onTerminalFontFamilyChange={onTerminalFontFamilyChange}
             onTerminalFontSizeChange={onTerminalFontSizeChange}
             onTerminalFontWeightChange={onTerminalFontWeightChange}
             selectedTerminalColorSchemeId={selectedTerminalColorSchemeId}
+            selectedTerminalCursorColor={selectedTerminalCursorColor}
+            selectedTerminalSelectionColor={selectedTerminalSelectionColor}
+            selectedTerminalCursorStyle={selectedTerminalCursorStyle}
+            selectedTerminalCursorWidth={selectedTerminalCursorWidth}
             selectedTerminalFontFamilyId={selectedTerminalFontFamilyId}
             selectedTerminalFontSize={selectedTerminalFontSize}
             selectedTerminalFontWeight={selectedTerminalFontWeight}
@@ -2881,6 +3250,12 @@ function TerminalApp(): React.JSX.Element {
   const [selectedTerminalCursorBlink, setSelectedTerminalCursorBlink] = useState(
     defaultTerminalCursorBlink
   )
+  const [selectedTerminalCursorColor, setSelectedTerminalCursorColor] = useState<string | null>(
+    null
+  )
+  const [selectedTerminalSelectionColor, setSelectedTerminalSelectionColor] = useState<
+    string | null
+  >(null)
   const [selectedTerminalCursorStyle, setSelectedTerminalCursorStyle] =
     useState<TerminalCursorStyle>(defaultTerminalCursorStyle)
   const [selectedTerminalCursorWidth, setSelectedTerminalCursorWidth] = useState(
@@ -2936,6 +3311,11 @@ function TerminalApp(): React.JSX.Element {
       : 'platform-default'
   const selectedTerminalColorScheme =
     terminalColorSchemesById.get(selectedTerminalColorSchemeId) ?? defaultTerminalColorScheme
+  const selectedTerminalTheme = getConfiguredTerminalTheme(
+    selectedTerminalColorScheme.theme,
+    selectedTerminalCursorColor,
+    selectedTerminalSelectionColor
+  )
   const availableTerminalFontOptions = bundledTerminalFontOptions
   const selectedTerminalFontOption =
     availableTerminalFontOptions.find(
@@ -2952,6 +3332,8 @@ function TerminalApp(): React.JSX.Element {
       setSelectedStartupMode(normalizedSettings.startupMode)
       setSelectedTerminalColorSchemeId(normalizedSettings.terminalColorSchemeId)
       setSelectedTerminalCursorBlink(normalizedSettings.terminalCursorBlink)
+      setSelectedTerminalCursorColor(normalizedSettings.terminalCursorColor)
+      setSelectedTerminalSelectionColor(normalizedSettings.terminalSelectionColor)
       setSelectedTerminalCursorStyle(normalizedSettings.terminalCursorStyle)
       setSelectedTerminalCursorWidth(normalizedSettings.terminalCursorWidth)
       setSelectedTerminalFontFamilyId(normalizedSettings.terminalFontFamilyId)
@@ -3243,11 +3625,9 @@ function TerminalApp(): React.JSX.Element {
 
   const getTerminalThemeForSearchState = useCallback(
     (searchIsOpen: boolean): ITheme => {
-      return searchIsOpen
-        ? getSearchTerminalTheme(selectedTerminalColorScheme.theme)
-        : selectedTerminalColorScheme.theme
+      return searchIsOpen ? getSearchTerminalTheme(selectedTerminalTheme) : selectedTerminalTheme
     },
-    [selectedTerminalColorScheme]
+    [selectedTerminalTheme]
   )
 
   const focusActiveTerminal = useCallback((): void => {
@@ -3994,6 +4374,8 @@ function TerminalApp(): React.JSX.Element {
           startupMode: selectedStartupMode,
           terminalColorSchemeId: selectedTerminalColorSchemeId,
           terminalCursorBlink: selectedTerminalCursorBlink,
+          terminalCursorColor: selectedTerminalCursorColor,
+          terminalSelectionColor: selectedTerminalSelectionColor,
           terminalCursorStyle: selectedTerminalCursorStyle,
           terminalCursorWidth: selectedTerminalCursorWidth,
           terminalFontFamilyId: selectedTerminalFontFamilyId,
@@ -4011,6 +4393,8 @@ function TerminalApp(): React.JSX.Element {
     selectedStartupMode,
     selectedTerminalColorSchemeId,
     selectedTerminalCursorBlink,
+    selectedTerminalCursorColor,
+    selectedTerminalSelectionColor,
     selectedTerminalCursorStyle,
     selectedTerminalCursorWidth,
     selectedTerminalFontFamilyId,
@@ -4913,7 +5297,7 @@ function TerminalApp(): React.JSX.Element {
   const hasMountedSshBrowsers = mountedSshBrowserTabs.length > 0
   const terminalWorkspaceStyle = {
     '--terminal-background':
-      selectedTerminalColorScheme.theme.background ?? defaultTerminalTheme.background ?? '#000000',
+      selectedTerminalTheme.background ?? defaultTerminalTheme.background ?? '#000000',
     ...(activeSshBrowserState ? { '--ssh-browser-width': `${activeSshBrowserWidth}px` } : {})
   } as CSSProperties
   const openCurrentFolderPath =
@@ -6217,6 +6601,8 @@ function TerminalApp(): React.JSX.Element {
           onStartupModeChange={setSelectedStartupMode}
           onTerminalColorSchemeChange={setSelectedTerminalColorSchemeId}
           onTerminalCursorBlinkChange={setSelectedTerminalCursorBlink}
+          onTerminalCursorColorChange={setSelectedTerminalCursorColor}
+          onTerminalSelectionColorChange={setSelectedTerminalSelectionColor}
           onTerminalCursorStyleChange={setSelectedTerminalCursorStyle}
           onTerminalCursorWidthChange={setSelectedTerminalCursorWidth}
           onTerminalFontFamilyChange={setSelectedTerminalFontFamilyId}
@@ -6226,6 +6612,8 @@ function TerminalApp(): React.JSX.Element {
           selectedStartupMode={selectedStartupMode}
           selectedTerminalColorSchemeId={selectedTerminalColorSchemeId}
           selectedTerminalCursorBlink={selectedTerminalCursorBlink}
+          selectedTerminalCursorColor={selectedTerminalCursorColor}
+          selectedTerminalSelectionColor={selectedTerminalSelectionColor}
           selectedTerminalCursorStyle={selectedTerminalCursorStyle}
           selectedTerminalCursorWidth={selectedTerminalCursorWidth}
           selectedTerminalFontFamilyId={selectedTerminalFontFamilyId}

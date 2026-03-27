@@ -887,7 +887,7 @@ body {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   min-height: 0;
-  background: var(--terminal-background, #000);
+  background: transparent;
   overflow: hidden;
 }
 
@@ -1087,7 +1087,7 @@ body {
   inset: 0;
   visibility: hidden;
   pointer-events: none;
-  background: var(--terminal-background, #000);
+  background: transparent;
 }
 
 .terminal-screen.is-active {
@@ -1099,7 +1099,7 @@ body {
   width: 100%;
   height: 100%;
   padding: 10px 12px;
-  background: var(--terminal-background, #000);
+  background: transparent;
 }
 
 .terminal-screen .xterm-viewport,
@@ -1336,6 +1336,10 @@ body {
   gap: 12px;
 }
 
+.settings-appearance-controls--compact {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .settings-field {
   display: grid;
   align-content: start;
@@ -1351,6 +1355,18 @@ body {
   font-size: 12px;
   font-weight: 600;
   line-height: 1.2;
+}
+
+.settings-field-label--sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .settings-field-input {
@@ -1372,6 +1388,11 @@ body {
     box-shadow 160ms ease;
 }
 
+.settings-field-input:disabled {
+  opacity: 0.52;
+  cursor: not-allowed;
+}
+
 .settings-field-input[type='number'] {
   appearance: textfield;
   -moz-appearance: textfield;
@@ -1391,6 +1412,53 @@ body {
 .settings-field-input.settings-field-input--native-number[type='number']::-webkit-inner-spin-button,
 .settings-field-input.settings-field-input--native-number[type='number']::-webkit-outer-spin-button {
   -webkit-appearance: auto;
+}
+
+.settings-field-input.settings-field-input--color {
+  padding: 4px 6px;
+}
+
+.settings-inline-control {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr);
+  gap: 0;
+}
+
+.settings-inline-control .settings-field-input {
+  position: relative;
+}
+
+.settings-inline-control .settings-field-input:focus {
+  z-index: 1;
+}
+
+.settings-inline-control .settings-field-input--color {
+  border-right: 0;
+  border-radius: 8px 0 0 8px;
+}
+
+.settings-inline-control .settings-field-input:not(.settings-field-input--color) {
+  border-radius: 0 8px 8px 0;
+}
+
+.settings-field-input.settings-field-input--color[type='color'] {
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+}
+
+.settings-field-input.settings-field-input--color[type='color']::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+.settings-field-input.settings-field-input--color[type='color']::-webkit-color-swatch {
+  border: 0;
+  border-radius: 6px;
+}
+
+.settings-field-input.settings-field-input--color[type='color']::-moz-color-swatch {
+  border: 0;
+  border-radius: 6px;
 }
 
 .settings-field-input:focus {
@@ -1602,12 +1670,49 @@ body {
   line-height: var(--settings-preview-line-height, 1.35);
 }
 
+.settings-color-scheme-preview-cursor {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 2px;
+  vertical-align: -0.14em;
+}
+
+.settings-color-scheme-preview-cursor--bar {
+  width: var(--settings-preview-cursor-width, 2px);
+  height: 1.1em;
+  border-radius: 999px;
+  background: var(--settings-scheme-cursor);
+}
+
+.settings-color-scheme-preview-cursor--underline {
+  min-width: 0.78ch;
+  height: 1em;
+  border-bottom: 2px solid var(--settings-scheme-cursor);
+}
+
+.settings-color-scheme-preview-cursor--block {
+  min-width: 0.82ch;
+  height: 1.08em;
+  background: var(--settings-scheme-cursor);
+  color: var(--settings-scheme-cursor-accent);
+}
+
 .settings-color-scheme-preview-line.is-muted {
   color: var(--settings-scheme-muted);
 }
 
 .settings-color-scheme-preview-path {
   color: var(--settings-scheme-accent);
+}
+
+.settings-color-scheme-preview-selection {
+  padding: 0 2px;
+  border-radius: 3px;
+  background: var(--settings-scheme-selection-background, rgba(255, 255, 255, 0.18));
+  color: var(--settings-scheme-selection-foreground, var(--settings-scheme-foreground));
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
 }
 
 .settings-color-scheme-swatches {
