@@ -661,6 +661,7 @@ const terminalColorSchemes: TerminalColorScheme[] = [
       magenta: '#a626a4',
       red: '#e45649',
       selectionBackground: '#3a3f4b',
+      selectionForeground: '#ffffff',
       selectionInactiveBackground: '#3a3f4b',
       white: '#a0a1a7',
       yellow: '#986801'
