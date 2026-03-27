@@ -24,7 +24,7 @@ import {
   Plus,
   Search,
   Server,
-  Settings2,
+  Settings,
   TextSelect,
   Trash2,
   X
@@ -4595,7 +4595,7 @@ function TerminalApp(): React.JSX.Element {
                   role="menuitem"
                   type="button"
                 >
-                  <Settings2 aria-hidden="true" className="tab-action-menu-icon" />
+                  <Settings aria-hidden="true" className="tab-action-menu-icon" />
                   Settings
                 </button>
                 <button
