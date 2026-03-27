@@ -24,6 +24,7 @@ import {
   Plus,
   Search,
   Server,
+  Settings2,
   TextSelect,
   Trash2,
   X
@@ -144,6 +145,8 @@ interface SshServerIconOption {
   value: SshServerIcon
 }
 
+type SettingsTabId = 'general' | 'colorSchemes'
+
 const defaultTabTitle = '~'
 const maxPersistedTerminalOutputLines = 500
 const searchRefreshDebounceMs = 120
@@ -206,6 +209,10 @@ const sshBrowserVideoFileIconDescriptor: SshBrowserFileIconDescriptor = {
   icon: FileVideoCamera,
   toneClassName: 'ssh-browser-entry-icon-video'
 }
+const settingsTabs: Array<{ id: SettingsTabId; label: string }> = [
+  { id: 'general', label: 'General' },
+  { id: 'colorSchemes', label: 'Color Schemes' }
+]
 const sshBrowserFileIconByExactName = new Map<string, SshBrowserFileIconDescriptor>([
   ['.editorconfig', sshBrowserCodeFileIconDescriptor],
   ['.env', sshBrowserTextFileIconDescriptor],
@@ -1304,6 +1311,12 @@ interface SshConfigDialogProps {
   serverConfig: SshServerConfig | null
 }
 
+interface SettingsDialogProps {
+  activeTab: SettingsTabId
+  onClose: () => void
+  onTabChange: (tab: SettingsTabId) => void
+}
+
 interface SshServerIconSelectProps {
   disabled?: boolean
   onChange: (icon: SshServerIcon) => void
@@ -1848,6 +1861,83 @@ function SshConfigDialog({ onClose, serverConfig }: SshConfigDialogProps): React
   )
 }
 
+function SettingsDialog({
+  activeTab,
+  onClose,
+  onTabChange
+}: SettingsDialogProps): React.JSX.Element {
+  const titleId = useId()
+
+  return (
+    <Modal
+      appElement={document.getElementById('root') ?? undefined}
+      aria={{
+        labelledby: titleId
+      }}
+      bodyOpenClassName="ssh-config-modal-open"
+      className="settings-dialog"
+      contentLabel="Settings"
+      isOpen
+      onRequestClose={onClose}
+      overlayClassName="settings-dialog-shell"
+      shouldCloseOnEsc
+      shouldCloseOnOverlayClick
+    >
+      <div className="settings-dialog-header">
+        <h2 className="settings-dialog-title" id={titleId}>
+          Settings
+        </h2>
+        <button
+          aria-label="Close settings"
+          className="settings-dialog-dismiss"
+          onClick={onClose}
+          type="button"
+        >
+          <X aria-hidden="true" className="settings-dialog-dismiss-icon" />
+        </button>
+      </div>
+      <div aria-label="Settings sections" className="settings-tab-list" role="tablist">
+        {settingsTabs.map((tab) => {
+          const isActive = tab.id === activeTab
+          const tabId = `settings-tab-${tab.id}`
+          const panelId = `settings-panel-${tab.id}`
+
+          return (
+            <button
+              key={tab.id}
+              aria-controls={panelId}
+              aria-selected={isActive}
+              className={`settings-tab${isActive ? ' is-active' : ''}`}
+              id={tabId}
+              onClick={() => onTabChange(tab.id)}
+              role="tab"
+              tabIndex={isActive ? 0 : -1}
+              type="button"
+            >
+              {tab.label}
+            </button>
+          )
+        })}
+      </div>
+      {settingsTabs.map((tab) => {
+        const isActive = tab.id === activeTab
+
+        return (
+          <section
+            aria-hidden={!isActive}
+            aria-labelledby={`settings-tab-${tab.id}`}
+            className={`settings-panel${isActive ? ' is-active' : ''}`}
+            hidden={!isActive}
+            id={`settings-panel-${tab.id}`}
+            key={tab.id}
+            role="tabpanel"
+          />
+        )
+      })}
+    </Modal>
+  )
+}
+
 function TerminalApp(): React.JSX.Element {
   const [isSessionHydrated, setIsSessionHydrated] = useState(false)
   const [tabs, setTabs] = useState<TabRecord[]>([])
@@ -1869,6 +1959,8 @@ function TerminalApp(): React.JSX.Element {
     null
   )
   const [sshUploadProgress, setSshUploadProgress] = useState<SshUploadProgressEvent | null>(null)
+  const [isSettingsDialogOpen, setIsSettingsDialogOpen] = useState(false)
+  const [activeSettingsTab, setActiveSettingsTab] = useState<SettingsTabId>('general')
   const [isSshConfigDialogOpen, setIsSshConfigDialogOpen] = useState(false)
   const [sshServerBeingEdited, setSshServerBeingEdited] = useState<SshServerConfig | null>(null)
   const [sshServers, setSshServers] = useState<SshServerConfig[]>([])
@@ -3113,7 +3205,7 @@ function TerminalApp(): React.JSX.Element {
 
   useEffect(() => {
     const disposeFindRequested = window.api.terminal.onFindRequested(() => {
-      if (isSshConfigDialogOpen) {
+      if (isSshConfigDialogOpen || isSettingsDialogOpen) {
         return
       }
 
@@ -3134,10 +3226,14 @@ function TerminalApp(): React.JSX.Element {
     return () => {
       disposeFindRequested()
     }
-  }, [isSshConfigDialogOpen, openSearch])
+  }, [isSettingsDialogOpen, isSshConfigDialogOpen, openSearch])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
+      if (isSettingsDialogOpen) {
+        return
+      }
+
       const usesPrimaryModifier = event.metaKey || event.ctrlKey
 
       if (usesPrimaryModifier && event.key.toLowerCase() === 't') {
@@ -3193,7 +3289,7 @@ function TerminalApp(): React.JSX.Element {
     return () => {
       window.removeEventListener('keydown', onKeyDown, { capture: true })
     }
-  }, [activateTab, closeTab, createTab, selectAdjacentTab])
+  }, [activateTab, closeTab, createTab, isSettingsDialogOpen, selectAdjacentTab])
 
   useEffect(() => {
     if (!isSearchOpen) {
@@ -3607,6 +3703,16 @@ function TerminalApp(): React.JSX.Element {
   const handleCloseSshConfigDialog = useCallback((): void => {
     setIsSshConfigDialogOpen(false)
     setSshServerBeingEdited(null)
+  }, [])
+
+  const handleOpenSettingsDialog = useCallback((tab: SettingsTabId = 'general'): void => {
+    setIsSshMenuOpen(false)
+    setActiveSettingsTab(tab)
+    setIsSettingsDialogOpen(true)
+  }, [])
+
+  const handleCloseSettingsDialog = useCallback((): void => {
+    setIsSettingsDialogOpen(false)
   }, [])
 
   const handleConnectToSshServer = useCallback(
@@ -4485,6 +4591,15 @@ function TerminalApp(): React.JSX.Element {
               <div className="tab-action-menu" id="ssh-menu" role="menu">
                 <button
                   className="tab-action-menu-item"
+                  onClick={() => handleOpenSettingsDialog()}
+                  role="menuitem"
+                  type="button"
+                >
+                  <Settings2 aria-hidden="true" className="tab-action-menu-icon" />
+                  Settings
+                </button>
+                <button
+                  className="tab-action-menu-item"
                   onClick={handleOpenSshConfigDialog}
                   role="menuitem"
                   type="button"
@@ -4929,6 +5044,13 @@ function TerminalApp(): React.JSX.Element {
           </div>
         ) : null}
       </section>
+      {isSettingsDialogOpen ? (
+        <SettingsDialog
+          activeTab={activeSettingsTab}
+          onClose={handleCloseSettingsDialog}
+          onTabChange={setActiveSettingsTab}
+        />
+      ) : null}
       {isSshConfigDialogOpen ? (
         <SshConfigDialog
           key={sshServerBeingEdited?.id ?? 'new'}
