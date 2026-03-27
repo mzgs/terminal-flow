@@ -146,6 +146,20 @@ interface SshServerIconOption {
 }
 
 type SettingsTabId = 'general' | 'colorSchemes'
+type TerminalColorSchemeId =
+  | 'midnight-blue'
+  | 'nord'
+  | 'gruvbox'
+  | 'rose-pine'
+  | 'ayu-mirage'
+  | 'everforest'
+
+interface TerminalColorScheme {
+  description: string
+  id: TerminalColorSchemeId
+  label: string
+  theme: ITheme
+}
 
 const defaultTabTitle = '~'
 const maxPersistedTerminalOutputLines = 500
@@ -211,7 +225,7 @@ const sshBrowserVideoFileIconDescriptor: SshBrowserFileIconDescriptor = {
 }
 const settingsTabs: Array<{ id: SettingsTabId; label: string }> = [
   { id: 'general', label: 'General' },
-  { id: 'colorSchemes', label: 'Color Schemes' }
+  { id: 'colorSchemes', label: 'Appearance' }
 ]
 const sshBrowserFileIconByExactName = new Map<string, SshBrowserFileIconDescriptor>([
   ['.editorconfig', sshBrowserCodeFileIconDescriptor],
@@ -339,12 +353,199 @@ const defaultTerminalTheme = {
   white: '#f5f5f5',
   yellow: '#e6c15a'
 } satisfies ITheme
-const searchTerminalTheme = {
-  ...defaultTerminalTheme,
-  selectionBackground: '#e0cb7d',
-  selectionForeground: '#171102',
-  selectionInactiveBackground: '#ffd84a'
+const nordTerminalTheme = {
+  background: '#2e3440',
+  black: '#3b4252',
+  blue: '#81a1c1',
+  brightBlack: '#4c566a',
+  brightBlue: '#8fbcbb',
+  brightCyan: '#93ccdc',
+  brightGreen: '#b1d196',
+  brightMagenta: '#c895bf',
+  brightRed: '#d06f79',
+  brightWhite: '#eceff4',
+  brightYellow: '#f0d399',
+  cursor: '#eceff4',
+  cursorAccent: '#2e3440',
+  cyan: '#88c0d0',
+  foreground: '#d8dee9',
+  green: '#a3be8c',
+  magenta: '#b48ead',
+  red: '#bf616a',
+  selectionBackground: 'rgba(216, 222, 233, 0.18)',
+  selectionInactiveBackground: 'rgba(216, 222, 233, 0.14)',
+  white: '#e5e9f0',
+  yellow: '#ebcb8b'
 } satisfies ITheme
+const gruvboxTerminalTheme = {
+  background: '#1d2021',
+  black: '#282828',
+  blue: '#83a598',
+  brightBlack: '#928374',
+  brightBlue: '#8ec07c',
+  brightCyan: '#8ec07c',
+  brightGreen: '#b8bb26',
+  brightMagenta: '#d3869b',
+  brightRed: '#fb4934',
+  brightWhite: '#fbf1c7',
+  brightYellow: '#fabd2f',
+  cursor: '#fbf1c7',
+  cursorAccent: '#1d2021',
+  cyan: '#8ec07c',
+  foreground: '#ebdbb2',
+  green: '#98971a',
+  magenta: '#b16286',
+  red: '#cc241d',
+  selectionBackground: 'rgba(250, 189, 47, 0.18)',
+  selectionInactiveBackground: 'rgba(250, 189, 47, 0.14)',
+  white: '#d5c4a1',
+  yellow: '#d79921'
+} satisfies ITheme
+const rosePineTerminalTheme = {
+  background: '#191724',
+  black: '#26233a',
+  blue: '#9ccfd8',
+  brightBlack: '#6e6a86',
+  brightBlue: '#c4a7e7',
+  brightCyan: '#9ccfd8',
+  brightGreen: '#31748f',
+  brightMagenta: '#ebbcba',
+  brightRed: '#eb6f92',
+  brightWhite: '#e0def4',
+  brightYellow: '#f6c177',
+  cursor: '#e0def4',
+  cursorAccent: '#191724',
+  cyan: '#9ccfd8',
+  foreground: '#e0def4',
+  green: '#31748f',
+  magenta: '#c4a7e7',
+  red: '#eb6f92',
+  selectionBackground: 'rgba(196, 167, 231, 0.2)',
+  selectionInactiveBackground: 'rgba(196, 167, 231, 0.14)',
+  white: '#e0def4',
+  yellow: '#f6c177'
+} satisfies ITheme
+const ayuMirageTerminalTheme = {
+  background: '#1f2430',
+  black: '#242936',
+  blue: '#73d0ff',
+  brightBlack: '#707a8c',
+  brightBlue: '#89ddff',
+  brightCyan: '#95e6cb',
+  brightGreen: '#bbe67e',
+  brightMagenta: '#dcc7ff',
+  brightRed: '#ffadad',
+  brightWhite: '#ffffff',
+  brightYellow: '#ffd580',
+  cursor: '#cbccc6',
+  cursorAccent: '#1f2430',
+  cyan: '#5ccfe6',
+  foreground: '#cbccc6',
+  green: '#aad94c',
+  magenta: '#d4bfff',
+  red: '#f28779',
+  selectionBackground: 'rgba(115, 208, 255, 0.18)',
+  selectionInactiveBackground: 'rgba(115, 208, 255, 0.14)',
+  white: '#d9d7ce',
+  yellow: '#ffcc66'
+} satisfies ITheme
+const everforestTerminalTheme = {
+  background: '#232a2e',
+  black: '#2d353b',
+  blue: '#7fbbb3',
+  brightBlack: '#859289',
+  brightBlue: '#83c092',
+  brightCyan: '#93c092',
+  brightGreen: '#a7c080',
+  brightMagenta: '#d699b6',
+  brightRed: '#e67e80',
+  brightWhite: '#d3c6aa',
+  brightYellow: '#dbbc7f',
+  cursor: '#d3c6aa',
+  cursorAccent: '#232a2e',
+  cyan: '#83c092',
+  foreground: '#d3c6aa',
+  green: '#a7c080',
+  magenta: '#d699b6',
+  red: '#e67e80',
+  selectionBackground: 'rgba(167, 192, 128, 0.18)',
+  selectionInactiveBackground: 'rgba(167, 192, 128, 0.14)',
+  white: '#d3c6aa',
+  yellow: '#dbbc7f'
+} satisfies ITheme
+const terminalColorSchemes: TerminalColorScheme[] = [
+  {
+    description: 'Cool blues on a hard black base. Matches the current default.',
+    id: 'midnight-blue',
+    label: 'Midnight Blue',
+    theme: defaultTerminalTheme
+  },
+  {
+    description: 'Low-glare slate palette with icy accents and softer contrast.',
+    id: 'nord',
+    label: 'Nord',
+    theme: nordTerminalTheme
+  },
+  {
+    description: 'Warm amber and olive tones with a denser terminal feel.',
+    id: 'gruvbox',
+    label: 'Gruvbox',
+    theme: gruvboxTerminalTheme
+  },
+  {
+    description: 'Muted mauves with soft cyan for calmer long sessions.',
+    id: 'rose-pine',
+    label: 'Rose Pine',
+    theme: rosePineTerminalTheme
+  },
+  {
+    description: 'Desaturated navy with balanced warm highlights and clear ANSI colors.',
+    id: 'ayu-mirage',
+    label: 'Ayu Mirage',
+    theme: ayuMirageTerminalTheme
+  },
+  {
+    description: 'Forest greens and parchment neutrals tuned for low fatigue.',
+    id: 'everforest',
+    label: 'Everforest',
+    theme: everforestTerminalTheme
+  }
+]
+const defaultTerminalColorScheme = terminalColorSchemes[0]
+const terminalColorSchemesById = new Map<TerminalColorSchemeId, TerminalColorScheme>(
+  terminalColorSchemes.map((colorScheme) => [colorScheme.id, colorScheme])
+)
+const terminalColorSchemeStorageKey = 'terminal.colorScheme'
+
+function getSearchTerminalTheme(theme: ITheme): ITheme {
+  return {
+    ...theme,
+    selectionBackground: '#e0cb7d',
+    selectionForeground: '#171102',
+    selectionInactiveBackground: '#ffd84a'
+  }
+}
+
+function getStoredTerminalColorSchemeId(): TerminalColorSchemeId {
+  if (typeof window === 'undefined') {
+    return defaultTerminalColorScheme.id
+  }
+
+  try {
+    const storedColorSchemeId = window.localStorage.getItem(terminalColorSchemeStorageKey)
+
+    if (
+      storedColorSchemeId &&
+      terminalColorSchemesById.has(storedColorSchemeId as TerminalColorSchemeId)
+    ) {
+      return storedColorSchemeId as TerminalColorSchemeId
+    }
+  } catch (error) {
+    console.error('Unable to load the saved terminal color scheme.', error)
+  }
+
+  return defaultTerminalColorScheme.id
+}
 const sshServerIconLabelOverrides: Record<string, string> = {
   almalinux: 'AlmaLinux',
   centos: 'CentOS',
@@ -1314,7 +1515,9 @@ interface SshConfigDialogProps {
 interface SettingsDialogProps {
   activeTab: SettingsTabId
   onClose: () => void
+  onTerminalColorSchemeChange: (colorSchemeId: TerminalColorSchemeId) => void
   onTabChange: (tab: SettingsTabId) => void
+  selectedTerminalColorSchemeId: TerminalColorSchemeId
 }
 
 interface SshServerIconSelectProps {
@@ -1480,6 +1683,111 @@ function SshServerIconSelect({
           </div>
         </div>
       ) : null}
+    </div>
+  )
+}
+
+function GeneralSettingsPanel({
+  selectedTerminalColorScheme
+}: {
+  selectedTerminalColorScheme: TerminalColorScheme
+}): React.JSX.Element {
+  return (
+    <div className="settings-placeholder">
+      <p className="settings-placeholder-copy">
+        More workspace preferences will land here. The active terminal palette is{' '}
+        <span className="settings-placeholder-value">{selectedTerminalColorScheme.label}</span>, and
+        you can change it from the Appearance tab.
+      </p>
+    </div>
+  )
+}
+
+function ColorSchemesSettingsPanel({
+  onTerminalColorSchemeChange,
+  selectedTerminalColorSchemeId
+}: {
+  onTerminalColorSchemeChange: (colorSchemeId: TerminalColorSchemeId) => void
+  selectedTerminalColorSchemeId: TerminalColorSchemeId
+}): React.JSX.Element {
+  return (
+    <div className="settings-color-schemes">
+      <p className="settings-color-schemes-note">
+        Pick a terminal palette. Changes apply to open tabs immediately and stay saved on this
+        device.
+      </p>
+      <div className="settings-color-scheme-grid">
+        {terminalColorSchemes.map((colorScheme) => {
+          const isSelected = colorScheme.id === selectedTerminalColorSchemeId
+          const previewStyle = {
+            '--settings-scheme-accent':
+              colorScheme.theme.blue ?? colorScheme.theme.cursor ?? colorScheme.theme.foreground,
+            '--settings-scheme-background': colorScheme.theme.background ?? '#000000',
+            '--settings-scheme-foreground': colorScheme.theme.foreground ?? '#ffffff',
+            '--settings-scheme-muted':
+              colorScheme.theme.brightBlack ?? colorScheme.theme.black ?? '#4c566a'
+          } as CSSProperties
+          const previewColors = [
+            colorScheme.theme.red ?? '#ff7b72',
+            colorScheme.theme.yellow ?? '#e6c15a',
+            colorScheme.theme.green ?? '#8fe388',
+            colorScheme.theme.blue ?? '#7aa2f7',
+            colorScheme.theme.magenta ?? '#c792ea',
+            colorScheme.theme.cyan ?? '#63d3ff'
+          ]
+
+          return (
+            <button
+              aria-pressed={isSelected}
+              className={`settings-color-scheme-card${isSelected ? ' is-selected' : ''}`}
+              key={colorScheme.id}
+              onClick={() => onTerminalColorSchemeChange(colorScheme.id)}
+              type="button"
+            >
+              <div className="settings-color-scheme-card-header">
+                <div className="settings-color-scheme-copy">
+                  <span className="settings-color-scheme-name">{colorScheme.label}</span>
+                  <span className="settings-color-scheme-description">
+                    {colorScheme.description}
+                  </span>
+                </div>
+                <span
+                  aria-hidden="true"
+                  className={`settings-color-scheme-indicator${isSelected ? ' is-selected' : ''}`}
+                >
+                  {isSelected ? <Check className="settings-color-scheme-indicator-icon" /> : null}
+                </span>
+              </div>
+              <div className="settings-color-scheme-preview" style={previewStyle}>
+                <div className="settings-color-scheme-preview-toolbar">
+                  <span className="settings-color-scheme-preview-dot" />
+                  <span className="settings-color-scheme-preview-dot" />
+                  <span className="settings-color-scheme-preview-dot" />
+                </div>
+                <div className="settings-color-scheme-preview-body">
+                  <span className="settings-color-scheme-preview-line">
+                    mustafa@terminal{' '}
+                    <span className="settings-color-scheme-preview-path">~/app</span>
+                  </span>
+                  <span className="settings-color-scheme-preview-line">$ npm run dev</span>
+                  <span className="settings-color-scheme-preview-line is-muted">
+                    vite ready in 420ms
+                  </span>
+                </div>
+              </div>
+              <div className="settings-color-scheme-swatches">
+                {previewColors.map((color, index) => (
+                  <span
+                    className="settings-color-scheme-swatch"
+                    key={`${colorScheme.id}-${index}`}
+                    style={{ backgroundColor: color }}
+                  />
+                ))}
+              </div>
+            </button>
+          )
+        })}
+      </div>
     </div>
   )
 }
@@ -1864,9 +2172,13 @@ function SshConfigDialog({ onClose, serverConfig }: SshConfigDialogProps): React
 function SettingsDialog({
   activeTab,
   onClose,
-  onTabChange
+  onTerminalColorSchemeChange,
+  onTabChange,
+  selectedTerminalColorSchemeId
 }: SettingsDialogProps): React.JSX.Element {
   const titleId = useId()
+  const selectedTerminalColorScheme =
+    terminalColorSchemesById.get(selectedTerminalColorSchemeId) ?? defaultTerminalColorScheme
 
   return (
     <Modal
@@ -1931,7 +2243,16 @@ function SettingsDialog({
             id={`settings-panel-${tab.id}`}
             key={tab.id}
             role="tabpanel"
-          />
+          >
+            {tab.id === 'general' ? (
+              <GeneralSettingsPanel selectedTerminalColorScheme={selectedTerminalColorScheme} />
+            ) : (
+              <ColorSchemesSettingsPanel
+                onTerminalColorSchemeChange={onTerminalColorSchemeChange}
+                selectedTerminalColorSchemeId={selectedTerminalColorSchemeId}
+              />
+            )}
+          </section>
         )
       })}
     </Modal>
@@ -1960,7 +2281,9 @@ function TerminalApp(): React.JSX.Element {
   )
   const [sshUploadProgress, setSshUploadProgress] = useState<SshUploadProgressEvent | null>(null)
   const [isSettingsDialogOpen, setIsSettingsDialogOpen] = useState(false)
-  const [activeSettingsTab, setActiveSettingsTab] = useState<SettingsTabId>('general')
+  const [activeSettingsTab, setActiveSettingsTab] = useState<SettingsTabId>('colorSchemes')
+  const [selectedTerminalColorSchemeId, setSelectedTerminalColorSchemeId] =
+    useState<TerminalColorSchemeId>(() => getStoredTerminalColorSchemeId())
   const [isSshConfigDialogOpen, setIsSshConfigDialogOpen] = useState(false)
   const [sshServerBeingEdited, setSshServerBeingEdited] = useState<SshServerConfig | null>(null)
   const [sshServers, setSshServers] = useState<SshServerConfig[]>([])
@@ -1999,6 +2322,8 @@ function TerminalApp(): React.JSX.Element {
     typeof navigator !== 'undefined' && navigator.userAgent.includes('Mac')
       ? 'platform-macos'
       : 'platform-default'
+  const selectedTerminalColorScheme =
+    terminalColorSchemesById.get(selectedTerminalColorSchemeId) ?? defaultTerminalColorScheme
 
   const updateTab = useCallback((tabId: string, updater: (tab: TabRecord) => TabRecord): void => {
     setTabs((currentTabs) =>
@@ -2256,6 +2581,15 @@ function TerminalApp(): React.JSX.Element {
     }
   }, [])
 
+  const getTerminalThemeForSearchState = useCallback(
+    (searchIsOpen: boolean): ITheme => {
+      return searchIsOpen
+        ? getSearchTerminalTheme(selectedTerminalColorScheme.theme)
+        : selectedTerminalColorScheme.theme
+    },
+    [selectedTerminalColorScheme]
+  )
+
   const focusActiveTerminal = useCallback((): void => {
     const currentActiveTabId = activeTabIdRef.current
 
@@ -2322,25 +2656,17 @@ function TerminalApp(): React.JSX.Element {
   )
 
   const openSearch = useCallback((): void => {
-    applyTerminalTheme(searchTerminalTheme)
     setIsSearchOpen(true)
-  }, [applyTerminalTheme])
+  }, [])
 
   const closeSearch = useCallback((): void => {
     cancelQueuedSearchRefresh()
     clearSearchSelection()
-    applyTerminalTheme(defaultTerminalTheme)
     resetSearchResults()
     setSearchQuery('')
     setIsSearchOpen(false)
     focusActiveTerminal()
-  }, [
-    applyTerminalTheme,
-    cancelQueuedSearchRefresh,
-    clearSearchSelection,
-    focusActiveTerminal,
-    resetSearchResults
-  ])
+  }, [cancelQueuedSearchRefresh, clearSearchSelection, focusActiveTerminal, resetSearchResults])
 
   const findNextMatch = useCallback((): void => {
     const activeTabId = activeTabIdRef.current
@@ -2789,12 +3115,14 @@ function TerminalApp(): React.JSX.Element {
         return
       }
 
-      const terminal = new Terminal(terminalOptions)
+      const terminal = new Terminal({
+        ...terminalOptions,
+        theme: getTerminalThemeForSearchState(isSearchOpenRef.current)
+      })
       const fitAddon = new FitAddon()
 
       terminal.loadAddon(fitAddon)
       terminal.open(hostElement)
-      terminal.options.theme = isSearchOpenRef.current ? searchTerminalTheme : defaultTerminalTheme
       restorePersistedTerminalOutput(terminal, tab.outputLines)
 
       const runtime: TerminalRuntime = {
@@ -2846,7 +3174,13 @@ function TerminalApp(): React.JSX.Element {
           failTabConnection(tabId, message, 'Unable to start shell', true)
         })
     },
-    [failTabConnection, finalizeTabConnection, queueSearchRefresh, syncActiveTabLayout]
+    [
+      failTabConnection,
+      finalizeTabConnection,
+      getTerminalThemeForSearchState,
+      queueSearchRefresh,
+      syncActiveTabLayout
+    ]
   )
 
   const handleTabsReorder = useCallback((nextOrder: TabRecord[]): void => {
@@ -2874,6 +3208,18 @@ function TerminalApp(): React.JSX.Element {
   useEffect(() => {
     activeTabIdRef.current = activeTabId
   }, [activeTabId])
+
+  useEffect(() => {
+    applyTerminalTheme(getTerminalThemeForSearchState(isSearchOpen))
+  }, [applyTerminalTheme, getTerminalThemeForSearchState, isSearchOpen])
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(terminalColorSchemeStorageKey, selectedTerminalColorSchemeId)
+    } catch (error) {
+      console.error('Unable to save the selected terminal color scheme.', error)
+    }
+  }, [selectedTerminalColorSchemeId])
 
   useEffect(() => {
     if (!activeTabId) {
@@ -3705,7 +4051,7 @@ function TerminalApp(): React.JSX.Element {
     setSshServerBeingEdited(null)
   }, [])
 
-  const handleOpenSettingsDialog = useCallback((tab: SettingsTabId = 'general'): void => {
+  const handleOpenSettingsDialog = useCallback((tab: SettingsTabId = 'colorSchemes'): void => {
     setIsSshMenuOpen(false)
     setActiveSettingsTab(tab)
     setIsSettingsDialogOpen(true)
@@ -3749,9 +4095,11 @@ function TerminalApp(): React.JSX.Element {
     : defaultSshBrowserWidth
   const mountedSshBrowserTabs = tabs.filter((tab) => sshBrowserStates[tab.id] !== undefined)
   const hasMountedSshBrowsers = mountedSshBrowserTabs.length > 0
-  const sshBrowserWorkspaceStyle = activeSshBrowserState
-    ? ({ '--ssh-browser-width': `${activeSshBrowserWidth}px` } as CSSProperties)
-    : undefined
+  const terminalWorkspaceStyle = {
+    '--terminal-background':
+      selectedTerminalColorScheme.theme.background ?? defaultTerminalTheme.background ?? '#000000',
+    ...(activeSshBrowserState ? { '--ssh-browser-width': `${activeSshBrowserWidth}px` } : {})
+  } as CSSProperties
   const openCurrentFolderPath =
     activeSshBrowserState?.path ?? activeSshBrowserPath ?? activeSshCwd ?? null
   const openCurrentFolderTitle = activeSshConfigId
@@ -4655,7 +5003,7 @@ function TerminalApp(): React.JSX.Element {
         onDragOver={handleWorkspaceDragOver}
         onDrop={handleWorkspaceDrop}
         ref={workspaceShellRef}
-        style={sshBrowserWorkspaceStyle}
+        style={terminalWorkspaceStyle}
       >
         <div className="terminal-stage" ref={workspaceRef}>
           {isSearchOpen ? (
@@ -5048,7 +5396,9 @@ function TerminalApp(): React.JSX.Element {
         <SettingsDialog
           activeTab={activeSettingsTab}
           onClose={handleCloseSettingsDialog}
+          onTerminalColorSchemeChange={setSelectedTerminalColorSchemeId}
           onTabChange={setActiveSettingsTab}
+          selectedTerminalColorSchemeId={selectedTerminalColorSchemeId}
         />
       ) : null}
       {isSshConfigDialogOpen ? (
