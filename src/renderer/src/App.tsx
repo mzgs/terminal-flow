@@ -33,7 +33,7 @@ import type { LucideIcon } from 'lucide-react'
 import { Reorder, useDragControls } from 'motion/react'
 import Modal from 'react-modal'
 import '@xterm/xterm/css/xterm.css'
-import type { AppSettings } from '../../shared/settings'
+import type { AppSettings, AppStartupMode, TerminalCursorStyle } from '../../shared/settings'
 import type { RestorableTabState, SessionSnapshot, SessionTabSnapshot } from '../../shared/session'
 import {
   defaultSshServerIcon,
@@ -155,6 +155,7 @@ type TerminalColorSchemeId =
   | 'ayu-mirage'
   | 'everforest'
 type TerminalFontWeight = '300' | '400' | '500' | '600' | '700'
+type SettingsTabId = 'general' | 'appearance'
 
 interface TerminalColorScheme {
   description: string
@@ -540,6 +541,24 @@ const terminalFontFamilies = [
 ] as const
 const defaultTerminalFontFamilyId = 'JetBrains Mono Variable'
 const defaultTerminalFontSize = 14
+const defaultAppStartupMode: AppStartupMode = 'restorePreviousSession'
+const defaultTerminalCursorBlink = true
+const defaultTerminalCursorStyle: TerminalCursorStyle = 'bar'
+const defaultTerminalCursorWidth = 2
+const defaultTerminalLineHeight = 1.35
+const minTerminalCursorWidth = 1
+const maxTerminalCursorWidth = 6
+const minTerminalLineHeight = 1
+const maxTerminalLineHeight = 2
+const terminalCursorStyleOptions: Array<{ label: string; value: TerminalCursorStyle }> = [
+  { label: 'Bar', value: 'bar' },
+  { label: 'Block', value: 'block' },
+  { label: 'Underline', value: 'underline' }
+]
+const appStartupModeOptions: Array<{ label: string; value: AppStartupMode }> = [
+  { label: 'Restore previous session', value: 'restorePreviousSession' },
+  { label: 'Start clean', value: 'startClean' }
+]
 const terminalFontWeightOptions: TerminalFontWeightOption[] = [
   { description: 'Light', label: '300', value: '300' },
   { description: 'Regular', label: '400', value: '400' },
@@ -605,34 +624,126 @@ function normalizeTerminalFontWeight(fontWeight: string | null | undefined): Ter
   return defaultTerminalFontWeight
 }
 
-function createAppSettings(
-  terminalColorSchemeId: TerminalColorSchemeId,
-  terminalFontFamilyId: TerminalFontFamilyId,
-  terminalFontSize: number,
+function normalizeTerminalCursorStyle(cursorStyle: string | null | undefined): TerminalCursorStyle {
+  if (cursorStyle === 'bar' || cursorStyle === 'block' || cursorStyle === 'underline') {
+    return cursorStyle
+  }
+
+  return defaultTerminalCursorStyle
+}
+
+function clampTerminalCursorWidth(cursorWidth: number): number {
+  return Math.min(Math.max(Math.round(cursorWidth), minTerminalCursorWidth), maxTerminalCursorWidth)
+}
+
+function normalizeTerminalCursorWidth(cursorWidth: number): number {
+  if (Number.isFinite(cursorWidth)) {
+    return clampTerminalCursorWidth(cursorWidth)
+  }
+
+  return defaultTerminalCursorWidth
+}
+
+function clampTerminalLineHeight(lineHeight: number): number {
+  const clampedLineHeight = Math.min(
+    Math.max(lineHeight, minTerminalLineHeight),
+    maxTerminalLineHeight
+  )
+  return Math.round(clampedLineHeight * 100) / 100
+}
+
+function normalizeTerminalLineHeight(lineHeight: number): number {
+  if (Number.isFinite(lineHeight)) {
+    return clampTerminalLineHeight(lineHeight)
+  }
+
+  return defaultTerminalLineHeight
+}
+
+function normalizeAppStartupMode(startupMode: string | null | undefined): AppStartupMode {
+  if (startupMode === 'restorePreviousSession' || startupMode === 'startClean') {
+    return startupMode
+  }
+
+  return defaultAppStartupMode
+}
+
+function normalizeDefaultNewTabDirectory(
+  defaultNewTabDirectory: string | null | undefined
+): string {
+  return typeof defaultNewTabDirectory === 'string' ? defaultNewTabDirectory.trim() : ''
+}
+
+function createAppSettings({
+  defaultNewTabDirectory,
+  startupMode,
+  terminalColorSchemeId,
+  terminalCursorBlink,
+  terminalCursorStyle,
+  terminalCursorWidth,
+  terminalFontFamilyId,
+  terminalFontSize,
+  terminalFontWeight,
+  terminalLineHeight
+}: {
+  defaultNewTabDirectory: string
+  startupMode: AppStartupMode
+  terminalColorSchemeId: TerminalColorSchemeId
+  terminalCursorBlink: boolean
+  terminalCursorStyle: TerminalCursorStyle
+  terminalCursorWidth: number
+  terminalFontFamilyId: TerminalFontFamilyId
+  terminalFontSize: number
   terminalFontWeight: TerminalFontWeight
-): AppSettings {
+  terminalLineHeight: number
+}): AppSettings {
   return {
+    general: {
+      defaultNewTabDirectory: normalizeDefaultNewTabDirectory(defaultNewTabDirectory),
+      startupMode: normalizeAppStartupMode(startupMode)
+    },
     terminal: {
       colorSchemeId: terminalColorSchemeId,
+      cursorBlink: terminalCursorBlink,
+      cursorStyle: normalizeTerminalCursorStyle(terminalCursorStyle),
+      cursorWidth: normalizeTerminalCursorWidth(terminalCursorWidth),
       fontFamilyId: terminalFontFamilyId,
       fontSize: terminalFontSize,
-      fontWeight: terminalFontWeight
+      fontWeight: terminalFontWeight,
+      lineHeight: normalizeTerminalLineHeight(terminalLineHeight)
     },
     version: 1
   }
 }
 
-function getNormalizedTerminalSettings(settings: AppSettings): {
+function getNormalizedAppSettings(settings: AppSettings): {
+  defaultNewTabDirectory: string
+  startupMode: AppStartupMode
   terminalColorSchemeId: TerminalColorSchemeId
+  terminalCursorBlink: boolean
+  terminalCursorStyle: TerminalCursorStyle
+  terminalCursorWidth: number
   terminalFontFamilyId: TerminalFontFamilyId
   terminalFontSize: number
   terminalFontWeight: TerminalFontWeight
+  terminalLineHeight: number
 } {
   return {
+    defaultNewTabDirectory: normalizeDefaultNewTabDirectory(
+      settings.general.defaultNewTabDirectory
+    ),
+    startupMode: normalizeAppStartupMode(settings.general.startupMode),
     terminalColorSchemeId: normalizeTerminalColorSchemeId(settings.terminal.colorSchemeId),
+    terminalCursorBlink:
+      typeof settings.terminal.cursorBlink === 'boolean'
+        ? settings.terminal.cursorBlink
+        : defaultTerminalCursorBlink,
+    terminalCursorStyle: normalizeTerminalCursorStyle(settings.terminal.cursorStyle),
+    terminalCursorWidth: normalizeTerminalCursorWidth(settings.terminal.cursorWidth),
     terminalFontFamilyId: normalizeTerminalFontFamilyId(settings.terminal.fontFamilyId),
     terminalFontSize: normalizeTerminalFontSize(settings.terminal.fontSize),
-    terminalFontWeight: normalizeTerminalFontWeight(settings.terminal.fontWeight)
+    terminalFontWeight: normalizeTerminalFontWeight(settings.terminal.fontWeight),
+    terminalLineHeight: normalizeTerminalLineHeight(settings.terminal.lineHeight)
   }
 }
 
@@ -645,8 +756,7 @@ function createTerminalFontOption(fontFamilyId: TerminalFontFamilyId): TerminalF
   return {
     fontFamily: getTerminalFontFamilyCss(fontFamilyId),
     id: fontFamilyId,
-    label:
-      terminalFontLabelOverrides[fontFamilyId] ?? fontFamilyId.replace(/\s+Variable$/i, '')
+    label: terminalFontLabelOverrides[fontFamilyId] ?? fontFamilyId.replace(/\s+Variable$/i, '')
   }
 }
 
@@ -742,13 +852,13 @@ const fallbackSshServerIconSrc = fallbackSshServerIconOption?.src ?? null
 
 const terminalOptions = {
   allowTransparency: true,
-  cursorBlink: true,
-  cursorStyle: 'bar',
-  cursorWidth: 2,
+  cursorBlink: defaultTerminalCursorBlink,
+  cursorStyle: defaultTerminalCursorStyle,
+  cursorWidth: defaultTerminalCursorWidth,
   fontFamily: defaultTerminalFontOption.fontFamily,
   fontSize: defaultTerminalFontSize,
   fontWeight: defaultTerminalFontWeight,
-  lineHeight: 1.35,
+  lineHeight: defaultTerminalLineHeight,
   macOptionIsMeta: true,
   scrollback: 5000,
   theme: defaultTerminalTheme
@@ -788,6 +898,24 @@ function cloneRestorableTabState(restoreState: RestorableTabState): RestorableTa
 
 function getDefaultRestorableTabState(): RestorableTabState {
   return { kind: 'local' }
+}
+
+function getDefaultLocalTabCreateOptions(defaultNewTabDirectory: string): CreateTabOptions | null {
+  const normalizedDefaultNewTabDirectory = normalizeDefaultNewTabDirectory(defaultNewTabDirectory)
+
+  if (normalizedDefaultNewTabDirectory === '') {
+    return null
+  }
+
+  return {
+    restoreState: {
+      cwd: normalizedDefaultNewTabDirectory,
+      kind: 'local'
+    },
+    terminalCreateOptions: {
+      cwd: normalizedDefaultNewTabDirectory
+    }
+  }
 }
 
 function clonePersistedOutputLines(outputLines?: string[]): string[] | undefined {
@@ -1623,15 +1751,27 @@ interface SshConfigDialogProps {
 
 interface SettingsDialogProps {
   availableTerminalFontOptions: TerminalFontOption[]
+  defaultNewTabDirectory: string
   onClose: () => void
+  onDefaultNewTabDirectoryChange: (defaultNewTabDirectory: string) => void
+  onStartupModeChange: (startupMode: AppStartupMode) => void
   onTerminalColorSchemeChange: (colorSchemeId: TerminalColorSchemeId) => void
+  onTerminalCursorBlinkChange: (cursorBlink: boolean) => void
+  onTerminalCursorStyleChange: (cursorStyle: TerminalCursorStyle) => void
+  onTerminalCursorWidthChange: (cursorWidth: number) => void
   onTerminalFontFamilyChange: (fontFamilyId: TerminalFontFamilyId) => void
   onTerminalFontSizeChange: (fontSize: number) => void
   onTerminalFontWeightChange: (fontWeight: TerminalFontWeight) => void
+  onTerminalLineHeightChange: (lineHeight: number) => void
+  selectedStartupMode: AppStartupMode
   selectedTerminalColorSchemeId: TerminalColorSchemeId
+  selectedTerminalCursorBlink: boolean
+  selectedTerminalCursorStyle: TerminalCursorStyle
+  selectedTerminalCursorWidth: number
   selectedTerminalFontFamilyId: TerminalFontFamilyId
   selectedTerminalFontSize: number
   selectedTerminalFontWeight: TerminalFontWeight
+  selectedTerminalLineHeight: number
 }
 
 interface SshServerIconSelectProps {
@@ -1801,6 +1941,157 @@ function SshServerIconSelect({
   )
 }
 
+function GeneralSettingsPanel({
+  defaultNewTabDirectory,
+  onDefaultNewTabDirectoryChange,
+  onStartupModeChange,
+  onTerminalCursorBlinkChange,
+  onTerminalCursorStyleChange,
+  onTerminalCursorWidthChange,
+  onTerminalLineHeightChange,
+  selectedStartupMode,
+  selectedTerminalCursorBlink,
+  selectedTerminalCursorStyle,
+  selectedTerminalCursorWidth,
+  selectedTerminalLineHeight
+}: {
+  defaultNewTabDirectory: string
+  onDefaultNewTabDirectoryChange: (defaultNewTabDirectory: string) => void
+  onStartupModeChange: (startupMode: AppStartupMode) => void
+  onTerminalCursorBlinkChange: (cursorBlink: boolean) => void
+  onTerminalCursorStyleChange: (cursorStyle: TerminalCursorStyle) => void
+  onTerminalCursorWidthChange: (cursorWidth: number) => void
+  onTerminalLineHeightChange: (lineHeight: number) => void
+  selectedStartupMode: AppStartupMode
+  selectedTerminalCursorBlink: boolean
+  selectedTerminalCursorStyle: TerminalCursorStyle
+  selectedTerminalCursorWidth: number
+  selectedTerminalLineHeight: number
+}): React.JSX.Element {
+  return (
+    <div className="settings-appearance settings-general">
+      <div className="settings-appearance-section">
+        <div className="settings-appearance-copy">
+          <h3 className="settings-appearance-title">Terminal defaults</h3>
+          <p className="settings-color-schemes-note">
+            Set the baseline cursor and spacing rules used for every terminal tab. Changes apply to
+            open tabs immediately.
+          </p>
+        </div>
+        <div className="settings-general-grid">
+          <label className="settings-field">
+            <span className="settings-field-label">Cursor style</span>
+            <select
+              className="settings-field-input"
+              onChange={(event) =>
+                onTerminalCursorStyleChange(event.target.value as TerminalCursorStyle)
+              }
+              value={selectedTerminalCursorStyle}
+            >
+              {terminalCursorStyleOptions.map((cursorStyleOption) => (
+                <option key={cursorStyleOption.value} value={cursorStyleOption.value}>
+                  {cursorStyleOption.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="settings-field">
+            <span className="settings-field-label">Blink</span>
+            <select
+              className="settings-field-input"
+              onChange={(event) => onTerminalCursorBlinkChange(event.target.value === 'true')}
+              value={String(selectedTerminalCursorBlink)}
+            >
+              <option value="true">On</option>
+              <option value="false">Off</option>
+            </select>
+          </label>
+          <label className="settings-field">
+            <span className="settings-field-label">Cursor width</span>
+            <input
+              className="settings-field-input settings-field-input--native-number"
+              disabled={selectedTerminalCursorStyle !== 'bar'}
+              max={maxTerminalCursorWidth}
+              min={minTerminalCursorWidth}
+              onChange={(event) => {
+                const nextCursorWidth = Number(event.target.value)
+
+                onTerminalCursorWidthChange(
+                  Number.isFinite(nextCursorWidth)
+                    ? clampTerminalCursorWidth(nextCursorWidth)
+                    : defaultTerminalCursorWidth
+                )
+              }}
+              type="number"
+              value={selectedTerminalCursorWidth}
+            />
+            <span className="settings-field-help">
+              Applies when the cursor style is set to bar.
+            </span>
+          </label>
+          <label className="settings-field">
+            <span className="settings-field-label">Line height</span>
+            <input
+              className="settings-field-input settings-field-input--native-number"
+              max={maxTerminalLineHeight}
+              min={minTerminalLineHeight}
+              onChange={(event) => {
+                const nextLineHeight = Number(event.target.value)
+
+                onTerminalLineHeightChange(
+                  Number.isFinite(nextLineHeight)
+                    ? clampTerminalLineHeight(nextLineHeight)
+                    : defaultTerminalLineHeight
+                )
+              }}
+              step="0.05"
+              type="number"
+              value={selectedTerminalLineHeight}
+            />
+          </label>
+        </div>
+      </div>
+      <div className="settings-appearance-section">
+        <div className="settings-appearance-copy">
+          <h3 className="settings-appearance-title">Startup</h3>
+          <p className="settings-color-schemes-note">
+            Control how the app opens and where new local tabs start.
+          </p>
+        </div>
+        <div className="settings-general-grid">
+          <label className="settings-field">
+            <span className="settings-field-label">On launch</span>
+            <select
+              className="settings-field-input"
+              onChange={(event) => onStartupModeChange(event.target.value as AppStartupMode)}
+              value={selectedStartupMode}
+            >
+              {appStartupModeOptions.map((startupModeOption) => (
+                <option key={startupModeOption.value} value={startupModeOption.value}>
+                  {startupModeOption.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="settings-field is-full-width">
+            <span className="settings-field-label">Default new tab directory</span>
+            <input
+              className="settings-field-input"
+              onChange={(event) => onDefaultNewTabDirectoryChange(event.target.value)}
+              placeholder="/Users/mustafa/Developer"
+              type="text"
+              value={defaultNewTabDirectory}
+            />
+            <span className="settings-field-help">
+              Leave blank to use the shell default. Invalid paths fall back automatically.
+            </span>
+          </label>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function AppearanceSettingsPanel({
   availableTerminalFontOptions,
   onTerminalColorSchemeChange,
@@ -1810,7 +2101,8 @@ function AppearanceSettingsPanel({
   selectedTerminalColorSchemeId,
   selectedTerminalFontFamilyId,
   selectedTerminalFontSize,
-  selectedTerminalFontWeight
+  selectedTerminalFontWeight,
+  selectedTerminalLineHeight
 }: {
   availableTerminalFontOptions: TerminalFontOption[]
   onTerminalColorSchemeChange: (colorSchemeId: TerminalColorSchemeId) => void
@@ -1821,6 +2113,7 @@ function AppearanceSettingsPanel({
   selectedTerminalFontFamilyId: TerminalFontFamilyId
   selectedTerminalFontSize: number
   selectedTerminalFontWeight: TerminalFontWeight
+  selectedTerminalLineHeight: number
 }): React.JSX.Element {
   const selectedTerminalColorScheme =
     terminalColorSchemesById.get(selectedTerminalColorSchemeId) ?? defaultTerminalColorScheme
@@ -1840,6 +2133,7 @@ function AppearanceSettingsPanel({
       selectedTerminalColorScheme.theme.black ??
       '#4c566a',
     '--settings-preview-font-family': selectedTerminalFontOption.fontFamily,
+    '--settings-preview-line-height': selectedTerminalLineHeight,
     '--settings-preview-font-size': `${selectedTerminalFontSize}px`,
     '--settings-preview-font-weight': selectedTerminalFontWeight
   } as CSSProperties
@@ -1943,6 +2237,7 @@ function AppearanceSettingsPanel({
               '--settings-scheme-muted':
                 colorScheme.theme.brightBlack ?? colorScheme.theme.black ?? '#4c566a',
               '--settings-preview-font-family': selectedTerminalFontOption.fontFamily,
+              '--settings-preview-line-height': selectedTerminalLineHeight,
               '--settings-preview-font-size': `${selectedTerminalFontSize}px`,
               '--settings-preview-font-weight': selectedTerminalFontWeight
             } as CSSProperties
@@ -2391,17 +2686,33 @@ function SshConfigDialog({ onClose, serverConfig }: SshConfigDialogProps): React
 
 function SettingsDialog({
   availableTerminalFontOptions,
+  defaultNewTabDirectory,
   onClose,
+  onDefaultNewTabDirectoryChange,
+  onStartupModeChange,
   onTerminalColorSchemeChange,
+  onTerminalCursorBlinkChange,
+  onTerminalCursorStyleChange,
+  onTerminalCursorWidthChange,
   onTerminalFontFamilyChange,
   onTerminalFontSizeChange,
   onTerminalFontWeightChange,
+  onTerminalLineHeightChange,
+  selectedStartupMode,
   selectedTerminalColorSchemeId,
+  selectedTerminalCursorBlink,
+  selectedTerminalCursorStyle,
+  selectedTerminalCursorWidth,
   selectedTerminalFontFamilyId,
   selectedTerminalFontSize,
-  selectedTerminalFontWeight
+  selectedTerminalFontWeight,
+  selectedTerminalLineHeight
 }: SettingsDialogProps): React.JSX.Element {
   const titleId = useId()
+  const [activeTabId, setActiveTabId] = useState<SettingsTabId>('general')
+  const generalTabId = `${titleId}-tab-general`
+  const appearanceTabId = `${titleId}-tab-appearance`
+  const panelId = `${titleId}-panel`
 
   return (
     <Modal
@@ -2431,18 +2742,65 @@ function SettingsDialog({
           <X aria-hidden="true" className="settings-dialog-dismiss-icon" />
         </button>
       </div>
-      <section className="settings-panel is-active" id="settings-panel-colorSchemes">
-        <AppearanceSettingsPanel
-          availableTerminalFontOptions={availableTerminalFontOptions}
-          onTerminalColorSchemeChange={onTerminalColorSchemeChange}
-          onTerminalFontFamilyChange={onTerminalFontFamilyChange}
-          onTerminalFontSizeChange={onTerminalFontSizeChange}
-          onTerminalFontWeightChange={onTerminalFontWeightChange}
-          selectedTerminalColorSchemeId={selectedTerminalColorSchemeId}
-          selectedTerminalFontFamilyId={selectedTerminalFontFamilyId}
-          selectedTerminalFontSize={selectedTerminalFontSize}
-          selectedTerminalFontWeight={selectedTerminalFontWeight}
-        />
+      <div aria-label="Settings sections" className="settings-dialog-tabs" role="tablist">
+        <button
+          aria-controls={panelId}
+          aria-selected={activeTabId === 'general'}
+          className={`settings-dialog-tab${activeTabId === 'general' ? ' is-active' : ''}`}
+          id={generalTabId}
+          onClick={() => setActiveTabId('general')}
+          role="tab"
+          type="button"
+        >
+          General
+        </button>
+        <button
+          aria-controls={panelId}
+          aria-selected={activeTabId === 'appearance'}
+          className={`settings-dialog-tab${activeTabId === 'appearance' ? ' is-active' : ''}`}
+          id={appearanceTabId}
+          onClick={() => setActiveTabId('appearance')}
+          role="tab"
+          type="button"
+        >
+          Appearance
+        </button>
+      </div>
+      <section
+        aria-labelledby={activeTabId === 'general' ? generalTabId : appearanceTabId}
+        className="settings-panel is-active"
+        id={panelId}
+        role="tabpanel"
+      >
+        {activeTabId === 'general' ? (
+          <GeneralSettingsPanel
+            defaultNewTabDirectory={defaultNewTabDirectory}
+            onDefaultNewTabDirectoryChange={onDefaultNewTabDirectoryChange}
+            onStartupModeChange={onStartupModeChange}
+            onTerminalCursorBlinkChange={onTerminalCursorBlinkChange}
+            onTerminalCursorStyleChange={onTerminalCursorStyleChange}
+            onTerminalCursorWidthChange={onTerminalCursorWidthChange}
+            onTerminalLineHeightChange={onTerminalLineHeightChange}
+            selectedStartupMode={selectedStartupMode}
+            selectedTerminalCursorBlink={selectedTerminalCursorBlink}
+            selectedTerminalCursorStyle={selectedTerminalCursorStyle}
+            selectedTerminalCursorWidth={selectedTerminalCursorWidth}
+            selectedTerminalLineHeight={selectedTerminalLineHeight}
+          />
+        ) : (
+          <AppearanceSettingsPanel
+            availableTerminalFontOptions={availableTerminalFontOptions}
+            onTerminalColorSchemeChange={onTerminalColorSchemeChange}
+            onTerminalFontFamilyChange={onTerminalFontFamilyChange}
+            onTerminalFontSizeChange={onTerminalFontSizeChange}
+            onTerminalFontWeightChange={onTerminalFontWeightChange}
+            selectedTerminalColorSchemeId={selectedTerminalColorSchemeId}
+            selectedTerminalFontFamilyId={selectedTerminalFontFamilyId}
+            selectedTerminalFontSize={selectedTerminalFontSize}
+            selectedTerminalFontWeight={selectedTerminalFontWeight}
+            selectedTerminalLineHeight={selectedTerminalLineHeight}
+          />
+        )}
       </section>
     </Modal>
   )
@@ -2470,14 +2828,27 @@ function TerminalApp(): React.JSX.Element {
   )
   const [sshUploadProgress, setSshUploadProgress] = useState<SshUploadProgressEvent | null>(null)
   const [isSettingsDialogOpen, setIsSettingsDialogOpen] = useState(false)
+  const [defaultNewTabDirectory, setDefaultNewTabDirectory] = useState('')
+  const [selectedStartupMode, setSelectedStartupMode] =
+    useState<AppStartupMode>(defaultAppStartupMode)
   const [selectedTerminalColorSchemeId, setSelectedTerminalColorSchemeId] =
     useState<TerminalColorSchemeId>(defaultTerminalColorScheme.id)
+  const [selectedTerminalCursorBlink, setSelectedTerminalCursorBlink] = useState(
+    defaultTerminalCursorBlink
+  )
+  const [selectedTerminalCursorStyle, setSelectedTerminalCursorStyle] =
+    useState<TerminalCursorStyle>(defaultTerminalCursorStyle)
+  const [selectedTerminalCursorWidth, setSelectedTerminalCursorWidth] = useState(
+    defaultTerminalCursorWidth
+  )
   const [selectedTerminalFontFamilyId, setSelectedTerminalFontFamilyId] =
     useState<TerminalFontFamilyId>(defaultTerminalFontFamilyId)
   const [selectedTerminalFontSize, setSelectedTerminalFontSize] =
     useState<number>(defaultTerminalFontSize)
   const [selectedTerminalFontWeight, setSelectedTerminalFontWeight] =
     useState<TerminalFontWeight>(defaultTerminalFontWeight)
+  const [selectedTerminalLineHeight, setSelectedTerminalLineHeight] =
+    useState(defaultTerminalLineHeight)
   const [hasHydratedSettings, setHasHydratedSettings] = useState(false)
   const [isSshConfigDialogOpen, setIsSshConfigDialogOpen] = useState(false)
   const [sshServerBeingEdited, setSshServerBeingEdited] = useState<SshServerConfig | null>(null)
@@ -2510,6 +2881,7 @@ function TerminalApp(): React.JSX.Element {
   const pendingTerminalStateRef = useRef(new Map<number, PendingTerminalState>())
   const pendingInitialTabStateRef = useRef(new Map<string, CreateTabOptions>())
   const initialSessionSnapshotRef = useRef<SessionSnapshot | null | undefined>(undefined)
+  const hasInitializedSessionRestoreRef = useRef(false)
   const isUnmountingRef = useRef(false)
   const emptyStateCreateQueuedRef = useRef(false)
   const pendingActivationTabIdRef = useRef<string | null>(null)
@@ -2529,12 +2901,18 @@ function TerminalApp(): React.JSX.Element {
     let isCancelled = false
 
     const applyLoadedSettings = (settings: AppSettings): void => {
-      const normalizedSettings = getNormalizedTerminalSettings(settings)
+      const normalizedSettings = getNormalizedAppSettings(settings)
 
+      setDefaultNewTabDirectory(normalizedSettings.defaultNewTabDirectory)
+      setSelectedStartupMode(normalizedSettings.startupMode)
       setSelectedTerminalColorSchemeId(normalizedSettings.terminalColorSchemeId)
+      setSelectedTerminalCursorBlink(normalizedSettings.terminalCursorBlink)
+      setSelectedTerminalCursorStyle(normalizedSettings.terminalCursorStyle)
+      setSelectedTerminalCursorWidth(normalizedSettings.terminalCursorWidth)
       setSelectedTerminalFontFamilyId(normalizedSettings.terminalFontFamilyId)
       setSelectedTerminalFontSize(normalizedSettings.terminalFontSize)
       setSelectedTerminalFontWeight(normalizedSettings.terminalFontWeight)
+      setSelectedTerminalLineHeight(normalizedSettings.terminalLineHeight)
     }
 
     void (async () => {
@@ -3023,7 +3401,12 @@ function TerminalApp(): React.JSX.Element {
   }, [])
 
   const applyTerminalTypography = useCallback(
-    (fontFamily: string, fontSize: number, fontWeight: TerminalFontWeight): void => {
+    (
+      fontFamily: string,
+      fontSize: number,
+      fontWeight: TerminalFontWeight,
+      lineHeight: number
+    ): void => {
       const refreshTerminalTypography = (): void => {
         for (const runtime of runtimesRef.current.values()) {
           if (runtime.disposed) {
@@ -3033,6 +3416,7 @@ function TerminalApp(): React.JSX.Element {
           runtime.terminal.options.fontFamily = fontFamily
           runtime.terminal.options.fontSize = fontSize
           runtime.terminal.options.fontWeight = fontWeight
+          runtime.terminal.options.lineHeight = lineHeight
           runtime.terminal.clearTextureAtlas()
           runtime.terminal.refresh(0, runtime.terminal.rows - 1)
         }
@@ -3054,6 +3438,22 @@ function TerminalApp(): React.JSX.Element {
       }
     },
     [syncActiveTabLayout]
+  )
+
+  const applyTerminalCursorSettings = useCallback(
+    (cursorBlink: boolean, cursorStyle: TerminalCursorStyle, cursorWidth: number): void => {
+      for (const runtime of runtimesRef.current.values()) {
+        if (runtime.disposed) {
+          continue
+        }
+
+        runtime.terminal.options.cursorBlink = cursorBlink
+        runtime.terminal.options.cursorStyle = cursorStyle
+        runtime.terminal.options.cursorWidth = cursorWidth
+        runtime.terminal.refresh(0, runtime.terminal.rows - 1)
+      }
+    },
+    []
   )
 
   const syncTabStripPosition = useCallback((tabId: string | null): void => {
@@ -3274,43 +3674,54 @@ function TerminalApp(): React.JSX.Element {
     runtimesRef.current.delete(tabId)
   }, [])
 
-  const createTab = useCallback((options?: CreateTabOptions): void => {
-    const tabId = `tab-${nextTabIdRef.current++}`
-    const shouldActivateImmediately =
-      activeTabIdRef.current === null || tabsRef.current.length === 0
-    const nextTitle = options?.title?.trim() || defaultTabTitle
-    const restoreState = cloneRestorableTabState(
-      options?.restoreState ?? getDefaultRestorableTabState()
-    )
+  const createTab = useCallback(
+    (options?: CreateTabOptions): void => {
+      const tabId = `tab-${nextTabIdRef.current++}`
+      const shouldActivateImmediately =
+        activeTabIdRef.current === null || tabsRef.current.length === 0
+      const defaultLocalTabCreateOptions =
+        options === undefined ? getDefaultLocalTabCreateOptions(defaultNewTabDirectory) : null
+      const createTerminal = options?.createTerminal
+      const trimmedTitle = options?.title?.trim()
+      const nextTitle = trimmedTitle || defaultTabTitle
+      const restoreState = cloneRestorableTabState(
+        options?.restoreState ??
+          defaultLocalTabCreateOptions?.restoreState ??
+          getDefaultRestorableTabState()
+      )
+      const terminalCreateOptions =
+        options?.terminalCreateOptions ?? defaultLocalTabCreateOptions?.terminalCreateOptions
 
-    if (options?.createTerminal || options?.terminalCreateOptions || options?.title) {
-      pendingInitialTabStateRef.current.set(tabId, {
-        createTerminal: options.createTerminal,
-        restoreState,
-        terminalCreateOptions: options.terminalCreateOptions,
-        title: options.title?.trim()
-      })
-    }
-
-    setTabs((currentTabs) => [
-      ...currentTabs,
-      {
-        id: tabId,
-        restoreState,
-        status: 'connecting',
-        terminalId: null,
-        title: nextTitle
+      if (createTerminal || terminalCreateOptions || trimmedTitle) {
+        pendingInitialTabStateRef.current.set(tabId, {
+          createTerminal,
+          restoreState,
+          terminalCreateOptions,
+          title: trimmedTitle
+        })
       }
-    ])
 
-    if (shouldActivateImmediately) {
-      pendingActivationTabIdRef.current = null
-      setActiveTabId(tabId)
-      return
-    }
+      setTabs((currentTabs) => [
+        ...currentTabs,
+        {
+          id: tabId,
+          restoreState,
+          status: 'connecting',
+          terminalId: null,
+          title: nextTitle
+        }
+      ])
 
-    pendingActivationTabIdRef.current = tabId
-  }, [])
+      if (shouldActivateImmediately) {
+        pendingActivationTabIdRef.current = null
+        setActiveTabId(tabId)
+        return
+      }
+
+      pendingActivationTabIdRef.current = tabId
+    },
+    [defaultNewTabDirectory]
+  )
 
   const closeTab = useCallback(
     (tabId: string): void => {
@@ -3388,9 +3799,13 @@ function TerminalApp(): React.JSX.Element {
 
       const terminal = new Terminal({
         ...terminalOptions,
+        cursorBlink: selectedTerminalCursorBlink,
+        cursorStyle: selectedTerminalCursorStyle,
+        cursorWidth: selectedTerminalCursorWidth,
         fontFamily: selectedTerminalFontOption.fontFamily,
         fontSize: selectedTerminalFontSize,
         fontWeight: selectedTerminalFontWeight,
+        lineHeight: selectedTerminalLineHeight,
         theme: getTerminalThemeForSearchState(isSearchOpenRef.current)
       })
       const fitAddon = new FitAddon()
@@ -3453,9 +3868,13 @@ function TerminalApp(): React.JSX.Element {
       finalizeTabConnection,
       getTerminalThemeForSearchState,
       queueSearchRefresh,
+      selectedTerminalCursorBlink,
+      selectedTerminalCursorStyle,
+      selectedTerminalCursorWidth,
       selectedTerminalFontOption,
       selectedTerminalFontSize,
       selectedTerminalFontWeight,
+      selectedTerminalLineHeight,
       syncActiveTabLayout
     ]
   )
@@ -3494,13 +3913,28 @@ function TerminalApp(): React.JSX.Element {
     applyTerminalTypography(
       selectedTerminalFontOption.fontFamily,
       selectedTerminalFontSize,
-      selectedTerminalFontWeight
+      selectedTerminalFontWeight,
+      selectedTerminalLineHeight
     )
   }, [
     applyTerminalTypography,
     selectedTerminalFontOption,
     selectedTerminalFontSize,
-    selectedTerminalFontWeight
+    selectedTerminalFontWeight,
+    selectedTerminalLineHeight
+  ])
+
+  useEffect(() => {
+    applyTerminalCursorSettings(
+      selectedTerminalCursorBlink,
+      selectedTerminalCursorStyle,
+      selectedTerminalCursorWidth
+    )
+  }, [
+    applyTerminalCursorSettings,
+    selectedTerminalCursorBlink,
+    selectedTerminalCursorStyle,
+    selectedTerminalCursorWidth
   ])
 
   useEffect(() => {
@@ -3510,22 +3944,34 @@ function TerminalApp(): React.JSX.Element {
 
     void window.api.settings
       .save(
-        createAppSettings(
-          selectedTerminalColorSchemeId,
-          selectedTerminalFontFamilyId,
-          selectedTerminalFontSize,
-          selectedTerminalFontWeight
-        )
+        createAppSettings({
+          defaultNewTabDirectory,
+          startupMode: selectedStartupMode,
+          terminalColorSchemeId: selectedTerminalColorSchemeId,
+          terminalCursorBlink: selectedTerminalCursorBlink,
+          terminalCursorStyle: selectedTerminalCursorStyle,
+          terminalCursorWidth: selectedTerminalCursorWidth,
+          terminalFontFamilyId: selectedTerminalFontFamilyId,
+          terminalFontSize: selectedTerminalFontSize,
+          terminalFontWeight: selectedTerminalFontWeight,
+          terminalLineHeight: selectedTerminalLineHeight
+        })
       )
       .catch((error) => {
         console.error('Unable to save the app settings.', error)
       })
   }, [
+    defaultNewTabDirectory,
     hasHydratedSettings,
+    selectedStartupMode,
     selectedTerminalColorSchemeId,
+    selectedTerminalCursorBlink,
+    selectedTerminalCursorStyle,
+    selectedTerminalCursorWidth,
     selectedTerminalFontFamilyId,
     selectedTerminalFontSize,
-    selectedTerminalFontWeight
+    selectedTerminalFontWeight,
+    selectedTerminalLineHeight
   ])
 
   useEffect(() => {
@@ -3577,6 +4023,18 @@ function TerminalApp(): React.JSX.Element {
   }, [searchQuery])
 
   useEffect(() => {
+    if (!hasHydratedSettings || hasInitializedSessionRestoreRef.current) {
+      return
+    }
+
+    hasInitializedSessionRestoreRef.current = true
+
+    if (selectedStartupMode === 'startClean') {
+      initialSessionSnapshotRef.current = null
+      setIsSessionHydrated(true)
+      return
+    }
+
     let didCancel = false
 
     void window.api.session
@@ -3615,7 +4073,7 @@ function TerminalApp(): React.JSX.Element {
     return () => {
       didCancel = true
     }
-  }, [])
+  }, [hasHydratedSettings, selectedStartupMode])
 
   useEffect(() => {
     if (isSessionHydrated) {
@@ -3949,13 +4407,7 @@ function TerminalApp(): React.JSX.Element {
     return () => {
       window.removeEventListener('keydown', onKeyDown, { capture: true })
     }
-  }, [
-    activateTab,
-    closeTab,
-    createTab,
-    isSettingsDialogOpen,
-    selectAdjacentTab
-  ])
+  }, [activateTab, closeTab, createTab, isSettingsDialogOpen, selectAdjacentTab])
 
   useEffect(() => {
     if (!isSearchOpen) {
@@ -5714,15 +6166,27 @@ function TerminalApp(): React.JSX.Element {
       {isSettingsDialogOpen ? (
         <SettingsDialog
           availableTerminalFontOptions={availableTerminalFontOptions}
+          defaultNewTabDirectory={defaultNewTabDirectory}
           onClose={handleCloseSettingsDialog}
+          onDefaultNewTabDirectoryChange={setDefaultNewTabDirectory}
+          onStartupModeChange={setSelectedStartupMode}
           onTerminalColorSchemeChange={setSelectedTerminalColorSchemeId}
+          onTerminalCursorBlinkChange={setSelectedTerminalCursorBlink}
+          onTerminalCursorStyleChange={setSelectedTerminalCursorStyle}
+          onTerminalCursorWidthChange={setSelectedTerminalCursorWidth}
           onTerminalFontFamilyChange={setSelectedTerminalFontFamilyId}
           onTerminalFontSizeChange={setSelectedTerminalFontSize}
           onTerminalFontWeightChange={setSelectedTerminalFontWeight}
+          onTerminalLineHeightChange={setSelectedTerminalLineHeight}
+          selectedStartupMode={selectedStartupMode}
           selectedTerminalColorSchemeId={selectedTerminalColorSchemeId}
-          selectedTerminalFontFamilyId={selectedTerminalFontOption.id}
+          selectedTerminalCursorBlink={selectedTerminalCursorBlink}
+          selectedTerminalCursorStyle={selectedTerminalCursorStyle}
+          selectedTerminalCursorWidth={selectedTerminalCursorWidth}
+          selectedTerminalFontFamilyId={selectedTerminalFontFamilyId}
           selectedTerminalFontSize={selectedTerminalFontSize}
           selectedTerminalFontWeight={selectedTerminalFontWeight}
+          selectedTerminalLineHeight={selectedTerminalLineHeight}
         />
       ) : null}
       {isSshConfigDialogOpen ? (

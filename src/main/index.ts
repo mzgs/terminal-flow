@@ -18,7 +18,7 @@ import { spawn, type IPty } from 'node-pty'
 import SftpClient from 'ssh2-sftp-client'
 import type { ConnectConfig } from 'ssh2'
 import icon from '../../resources/icon.png?asset'
-import type { AppSettings } from '../shared/settings'
+import type { AppSettings, AppStartupMode, TerminalCursorStyle } from '../shared/settings'
 import type { RestorableTabState, SessionSnapshot, SessionTabSnapshot } from '../shared/session'
 import {
   normalizeSshServerIcon,
@@ -1482,44 +1482,124 @@ function persistSessionSnapshot(snapshot: SessionSnapshot): void {
   }
 }
 
+const defaultAppStartupMode: AppStartupMode = 'restorePreviousSession'
+const defaultTerminalCursorStyle: TerminalCursorStyle = 'bar'
+const defaultTerminalCursorBlink = true
+const defaultTerminalCursorWidth = 2
+const defaultTerminalLineHeight = 1.35
+const minTerminalCursorWidth = 1
+const maxTerminalCursorWidth = 6
+const minTerminalLineHeight = 1
+const maxTerminalLineHeight = 2
+
+function parseSettingNumber(value: unknown): number | null {
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : null
+  }
+
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsedValue = Number(value)
+    return Number.isFinite(parsedValue) ? parsedValue : null
+  }
+
+  return null
+}
+
+function parseSettingBoolean(value: unknown): boolean | null {
+  if (typeof value === 'boolean') {
+    return value
+  }
+
+  if (typeof value === 'string') {
+    const normalizedValue = value.trim().toLocaleLowerCase()
+
+    if (normalizedValue === 'true') {
+      return true
+    }
+
+    if (normalizedValue === 'false') {
+      return false
+    }
+  }
+
+  return null
+}
+
+function clampTerminalCursorWidth(cursorWidth: number): number {
+  return Math.min(Math.max(Math.round(cursorWidth), minTerminalCursorWidth), maxTerminalCursorWidth)
+}
+
+function clampTerminalLineHeight(lineHeight: number): number {
+  const clampedLineHeight = Math.min(
+    Math.max(lineHeight, minTerminalLineHeight),
+    maxTerminalLineHeight
+  )
+  return Math.round(clampedLineHeight * 100) / 100
+}
+
 function parsePersistedSettings(value: unknown): AppSettings | null {
   if (!value || typeof value !== 'object') {
     return null
   }
 
   const record = value as Record<string, unknown>
+  const generalValue = record.general
   const terminalValue = record.terminal
 
   if (record.version !== 1 || !terminalValue || typeof terminalValue !== 'object') {
     return null
   }
 
+  const generalRecord =
+    generalValue && typeof generalValue === 'object'
+      ? (generalValue as Record<string, unknown>)
+      : null
   const terminalRecord = terminalValue as Record<string, unknown>
-  const fontSizeValue =
-    typeof terminalRecord.fontSize === 'number'
-      ? terminalRecord.fontSize
-      : typeof terminalRecord.fontSize === 'string' && terminalRecord.fontSize.trim() !== ''
-        ? Number(terminalRecord.fontSize)
-        : NaN
+  const fontSizeValue = parseSettingNumber(terminalRecord.fontSize)
+  const cursorWidthValue = parseSettingNumber(terminalRecord.cursorWidth)
+  const lineHeightValue = parseSettingNumber(terminalRecord.lineHeight)
+  const cursorBlinkValue = parseSettingBoolean(terminalRecord.cursorBlink)
+  const startupModeValue = generalRecord?.startupMode
+  const defaultNewTabDirectoryValue = generalRecord?.defaultNewTabDirectory
 
   if (
     typeof terminalRecord.colorSchemeId !== 'string' ||
     terminalRecord.colorSchemeId.trim() === '' ||
     typeof terminalRecord.fontFamilyId !== 'string' ||
     terminalRecord.fontFamilyId.trim() === '' ||
-    !Number.isFinite(fontSizeValue) ||
+    fontSizeValue === null ||
     typeof terminalRecord.fontWeight !== 'string' ||
     terminalRecord.fontWeight.trim() === ''
   ) {
     return null
   }
 
+  const startupMode =
+    startupModeValue === 'startClean' || startupModeValue === 'restorePreviousSession'
+      ? startupModeValue
+      : defaultAppStartupMode
+  const cursorStyle =
+    terminalRecord.cursorStyle === 'block' ||
+    terminalRecord.cursorStyle === 'underline' ||
+    terminalRecord.cursorStyle === 'bar'
+      ? terminalRecord.cursorStyle
+      : defaultTerminalCursorStyle
+
   return {
+    general: {
+      defaultNewTabDirectory:
+        typeof defaultNewTabDirectoryValue === 'string' ? defaultNewTabDirectoryValue.trim() : '',
+      startupMode
+    },
     terminal: {
       colorSchemeId: terminalRecord.colorSchemeId.trim(),
+      cursorBlink: cursorBlinkValue ?? defaultTerminalCursorBlink,
+      cursorStyle,
+      cursorWidth: clampTerminalCursorWidth(cursorWidthValue ?? defaultTerminalCursorWidth),
       fontFamilyId: terminalRecord.fontFamilyId.trim(),
       fontSize: Math.round(fontSizeValue),
-      fontWeight: terminalRecord.fontWeight.trim()
+      fontWeight: terminalRecord.fontWeight.trim(),
+      lineHeight: clampTerminalLineHeight(lineHeightValue ?? defaultTerminalLineHeight)
     },
     version: 1
   }
