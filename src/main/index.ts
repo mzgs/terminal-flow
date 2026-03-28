@@ -34,6 +34,7 @@ import {
   type SshKnownHostsRemovalResult,
   type SshRemoteDirectoryEntry,
   type SshRemoteDirectoryListing,
+  type SshRemoteTextFile,
   type SshServerConfig,
   type SshServerConfigInput,
   type SshServerConfigSaveInput,
@@ -102,6 +103,7 @@ const sshRemoteDirectoryListingEndMarker = '__TERMINAL_REMOTE_DIR_END__'
 const sshConnectTimeoutSeconds = 10
 const sshServerAliveIntervalSeconds = 5
 const sshServerAliveCountMax = 2
+const maxSshRemoteTextFileBytes = 1024 * 1024
 const defaultMainWindowWidth = 1000
 const defaultMainWindowHeight = 600
 const minMainWindowWidth = 640
@@ -941,7 +943,7 @@ function buildSftpConnectOptions(config: SshServerConfig, password: string | nul
 
   if (config.authMethod === 'password') {
     if (!password) {
-      throw new Error('Password-based SSH upload requires a password.')
+      throw new Error('Password-based SSH connection requires a password.')
     }
 
     return {
@@ -966,7 +968,52 @@ function buildSftpConnectOptions(config: SshServerConfig, password: string | nul
     }
   }
 
-  throw new Error('No SSH private key is available for upload.')
+  throw new Error('No SSH private key is available for this SSH connection.')
+}
+
+function formatFileSize(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) {
+    return '0 B'
+  }
+
+  if (bytes < 1024) {
+    return `${bytes} B`
+  }
+
+  if (bytes < 1024 * 1024) {
+    return `${(bytes / 1024).toFixed(bytes >= 10 * 1024 ? 0 : 1)} KB`
+  }
+
+  return `${(bytes / (1024 * 1024)).toFixed(bytes >= 10 * 1024 * 1024 ? 0 : 1)} MB`
+}
+
+function isProbablyTextBuffer(buffer: Buffer): boolean {
+  if (buffer.length === 0) {
+    return true
+  }
+
+  const inspectedLength = Math.min(buffer.length, 8192)
+  let suspiciousByteCount = 0
+
+  for (let index = 0; index < inspectedLength; index += 1) {
+    const value = buffer[index]
+
+    if (value === 0) {
+      return false
+    }
+
+    if (value === 9 || value === 10 || value === 13) {
+      continue
+    }
+
+    if ((value >= 32 && value <= 126) || value >= 128) {
+      continue
+    }
+
+    suspiciousByteCount += 1
+  }
+
+  return suspiciousByteCount / inspectedLength < 0.1
 }
 
 function collectSshUploadPlanEntries(
@@ -1258,6 +1305,40 @@ function runScpCommand(
   }
 
   args.push(`${config.username}@${config.host}:${remotePath}`, localPath)
+
+  return new Promise((resolve, reject) => {
+    execFile(
+      scpPath,
+      args,
+      {
+        encoding: 'utf8',
+        env: commandEnv
+      },
+      (error, stdout, stderr) => {
+        if (!error) {
+          resolve()
+          return
+        }
+
+        const message = stderr.trim() || stdout.trim() || error.message
+        reject(new Error(message))
+      }
+    )
+  })
+}
+
+function runScpUploadCommand(
+  config: SshServerConfig,
+  password: string | null,
+  localPath: string,
+  remotePath: string
+): Promise<void> {
+  const scpPath = resolveExecutablePath('scp')
+  const scpEnv = getSshCommandEnv(password, true)
+  const commandEnv = scpEnv ? { ...process.env, ...scpEnv } : process.env
+  const args = buildScpBaseArgs(config)
+
+  args.push(localPath, `${config.username}@${config.host}:${remotePath}`)
 
   return new Promise((resolve, reject) => {
     execFile(
@@ -2226,6 +2307,22 @@ function deleteSshServer(configId: string): void {
   sshServers = nextSshServers
 }
 
+function resolveSshServerConnection(configId: string): {
+  config: SshServerConfig
+  password: string | null
+} {
+  const config = sshServers.find((server) => server.id === configId)
+
+  if (!config) {
+    throw new Error('SSH server config not found.')
+  }
+
+  return {
+    config,
+    password: config.authMethod === 'password' ? decryptSshPassword(config.password) : null
+  }
+}
+
 function buildSshTerminalCreateOptions(
   config: SshServerConfig,
   password: string | null,
@@ -2255,14 +2352,7 @@ function connectToSshServer(
   webContents: WebContents,
   payload: { configId: string; cwd?: string }
 ): TerminalCreateResult {
-  const configId = payload.configId
-  const config = sshServers.find((server) => server.id === configId)
-
-  if (!config) {
-    throw new Error('SSH server config not found.')
-  }
-
-  const password = config.authMethod === 'password' ? decryptSshPassword(config.password) : null
+  const { config, password } = resolveSshServerConnection(payload.configId)
 
   return createTerminal(webContents, buildSshTerminalCreateOptions(config, password, payload.cwd))
 }
@@ -2271,38 +2361,87 @@ async function listSshDirectory(
   configId: string,
   path?: string
 ): Promise<SshRemoteDirectoryListing> {
-  const config = sshServers.find((server) => server.id === configId)
-
-  if (!config) {
-    throw new Error('SSH server config not found.')
-  }
-
-  const password = config.authMethod === 'password' ? decryptSshPassword(config.password) : null
+  const { config, password } = resolveSshServerConnection(configId)
   const output = await runSshCommand(config, password, buildSshListDirectoryCommand(path))
 
   return parseSshRemoteDirectoryListing(output)
 }
 
 async function deleteSshPath(configId: string, path: string, isDirectory: boolean): Promise<void> {
-  const config = sshServers.find((server) => server.id === configId)
-
-  if (!config) {
-    throw new Error('SSH server config not found.')
-  }
-
-  const password = config.authMethod === 'password' ? decryptSshPassword(config.password) : null
+  const { config, password } = resolveSshServerConnection(configId)
   await runSshCommand(config, password, buildSshDeletePathCommand(path, isDirectory))
 }
 
 async function renameSshPath(configId: string, path: string, nextPath: string): Promise<void> {
-  const config = sshServers.find((server) => server.id === configId)
+  const { config, password } = resolveSshServerConnection(configId)
+  await runSshCommand(config, password, buildSshRenamePathCommand(path, nextPath))
+}
 
-  if (!config) {
-    throw new Error('SSH server config not found.')
+async function readSshTextFile(configId: string, path: string): Promise<SshRemoteTextFile> {
+  const { config, password } = resolveSshServerConnection(configId)
+  const normalizedPath = path.trim()
+
+  if (normalizedPath === '') {
+    throw new Error('Remote file path is required.')
   }
 
-  const password = config.authMethod === 'password' ? decryptSshPassword(config.password) : null
-  await runSshCommand(config, password, buildSshRenamePathCommand(path, nextPath))
+  const tempFilePath = join(app.getPath('temp'), `terminal-remote-file-${randomUUID()}.tmp`)
+
+  try {
+    await runScpCommand(config, password, normalizedPath, tempFilePath, false)
+    const fileStats = statSync(tempFilePath)
+
+    if (fileStats.size > maxSshRemoteTextFileBytes) {
+      throw new Error(
+        `This file is too large to edit here (${formatFileSize(fileStats.size)}). Limit: ${formatFileSize(maxSshRemoteTextFileBytes)}.`
+      )
+    }
+
+    const fileBuffer = readFileSync(tempFilePath)
+
+    if (!isProbablyTextBuffer(fileBuffer)) {
+      throw new Error('This remote file looks binary and cannot be edited as text.')
+    }
+
+    return {
+      content: fileBuffer.toString('utf8'),
+      path: normalizedPath,
+      size: fileStats.size
+    }
+  } finally {
+    if (existsSync(tempFilePath)) {
+      unlinkSync(tempFilePath)
+    }
+  }
+}
+
+async function writeSshTextFile(configId: string, path: string, content: string): Promise<void> {
+  const { config, password } = resolveSshServerConnection(configId)
+  const normalizedPath = path.trim()
+
+  if (normalizedPath === '') {
+    throw new Error('Remote file path is required.')
+  }
+
+  const nextContent = typeof content === 'string' ? content : ''
+  const nextContentBuffer = Buffer.from(nextContent, 'utf8')
+
+  if (nextContentBuffer.byteLength > maxSshRemoteTextFileBytes) {
+    throw new Error(
+      `This file is too large to save here (${formatFileSize(nextContentBuffer.byteLength)}). Limit: ${formatFileSize(maxSshRemoteTextFileBytes)}.`
+    )
+  }
+
+  const tempFilePath = join(app.getPath('temp'), `terminal-remote-file-${randomUUID()}.tmp`)
+
+  try {
+    writeFileSync(tempFilePath, nextContentBuffer)
+    await runScpUploadCommand(config, password, tempFilePath, normalizedPath)
+  } finally {
+    if (existsSync(tempFilePath)) {
+      unlinkSync(tempFilePath)
+    }
+  }
 }
 
 async function downloadSshPath(
@@ -2311,13 +2450,7 @@ async function downloadSshPath(
   path: string,
   isDirectory: boolean
 ): Promise<string> {
-  const config = sshServers.find((server) => server.id === configId)
-
-  if (!config) {
-    throw new Error('SSH server config not found.')
-  }
-
-  const password = config.authMethod === 'password' ? decryptSshPassword(config.password) : null
+  const { config, password } = resolveSshServerConnection(configId)
   const downloadsPath = app.getPath('downloads')
   const normalizedPath = path.trim()
 
@@ -2346,11 +2479,7 @@ async function uploadSshPaths(
   targetPath: string,
   localPaths: string[]
 ): Promise<void> {
-  const config = sshServers.find((server) => server.id === configId)
-
-  if (!config) {
-    throw new Error('SSH server config not found.')
-  }
+  const { config, password } = resolveSshServerConnection(configId)
 
   const normalizedTargetPath = targetPath.trim()
 
@@ -2385,9 +2514,6 @@ async function uploadSshPaths(
 
     throw new Error(`Only files and folders can be uploaded: ${localPath}`)
   }
-
-  const password = config.authMethod === 'password' ? decryptSshPassword(config.password) : null
-
   await runSftpUploadCommand(
     webContents,
     config,
@@ -2623,6 +2749,9 @@ app.whenReady().then(() => {
   ipcMain.handle('ssh:list-directory', (_event, payload: { configId: string; path?: string }) =>
     listSshDirectory(payload.configId, payload.path)
   )
+  ipcMain.handle('ssh:read-text-file', (_event, payload: { configId: string; path: string }) =>
+    readSshTextFile(payload.configId, payload.path)
+  )
   ipcMain.handle('ssh:remove-known-hosts', (_event, payload: { host: string; port: number }) =>
     removeKnownHostsEntries(payload.host, payload.port)
   )
@@ -2635,6 +2764,11 @@ app.whenReady().then(() => {
     'ssh:upload-paths',
     (event, payload: { configId: string; localPaths: string[]; targetPath: string }) =>
       uploadSshPaths(event.sender, payload.configId, payload.targetPath, payload.localPaths)
+  )
+  ipcMain.handle(
+    'ssh:write-text-file',
+    (_event, payload: { configId: string; content: string; path: string }) =>
+      writeSshTextFile(payload.configId, payload.path, payload.content)
   )
   ipcMain.handle('ssh:save-config', (event, payload: SshServerConfigSaveInput) =>
     submitSshConfig(event.sender, payload)

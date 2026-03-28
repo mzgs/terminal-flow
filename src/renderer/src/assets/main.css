@@ -1397,6 +1397,327 @@ body {
   background: rgba(5, 10, 16, 0.82);
 }
 
+.remote-editor-dialog-shell {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(5, 10, 16, 0.82);
+}
+
+.remote-editor-dialog {
+  width: min(960px, 100%);
+  height: min(720px, calc(100vh - 48px));
+  max-height: calc(100vh - 48px);
+  border: 1px solid rgba(119, 215, 255, 0.16);
+  border-radius: 10px;
+  background: #0c121c;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+  outline: none;
+  overflow: hidden;
+}
+
+.remote-editor-form {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto auto;
+  height: 100%;
+}
+
+.remote-editor-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 20px 22px 0;
+}
+
+.remote-editor-heading {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.remote-editor-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.remote-editor-title-icon {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  color: rgba(119, 215, 255, 0.82);
+  stroke-width: 2;
+}
+
+.remote-editor-title {
+  min-width: 0;
+  color: var(--color-text);
+  font-size: 18px;
+  line-height: 1.2;
+  font-weight: 600;
+}
+
+.remote-editor-path {
+  overflow: hidden;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.remote-editor-dismiss {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid rgba(119, 215, 255, 0.14);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease,
+    color 160ms ease;
+}
+
+.remote-editor-dismiss:hover,
+.remote-editor-dismiss:focus-visible {
+  border-color: rgba(119, 215, 255, 0.24);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--color-text);
+  outline: none;
+}
+
+.remote-editor-dismiss:disabled {
+  opacity: 0.58;
+  cursor: wait;
+}
+
+.remote-editor-dismiss-icon {
+  width: 14px;
+  height: 14px;
+  stroke-width: 2.2;
+}
+
+.remote-editor-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 12px 22px 14px;
+  border-bottom: 1px solid rgba(119, 215, 255, 0.12);
+  color: var(--color-text-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.remote-editor-body {
+  display: grid;
+  grid-template-columns: var(--remote-editor-line-number-width, 44px) minmax(0, 1fr);
+  min-height: 0;
+  background: #090e16;
+}
+
+.remote-editor-gutter {
+  min-height: 0;
+  overflow: hidden;
+  border-right: 1px solid rgba(119, 215, 255, 0.12);
+  background: rgba(6, 12, 19, 0.92);
+  user-select: none;
+}
+
+.remote-editor-line-numbers {
+  min-height: 100%;
+  padding: 18px 8px 18px 10px;
+  color: rgba(149, 166, 190, 0.7);
+  font-family: 'JetBrains Mono Variable', 'IBM Plex Mono', monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  text-align: right;
+}
+
+.remote-editor-line-number {
+  display: block;
+}
+
+.remote-editor-stage {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  background: #090e16;
+  color: var(--color-text);
+  font-family: 'JetBrains Mono Variable', 'IBM Plex Mono', monospace;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.remote-editor-highlight-layer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.remote-editor-input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  padding: 18px 22px;
+  border: 0;
+  resize: none;
+  overflow: auto;
+  background: transparent;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  caret-color: #f3f6fc;
+  outline: none;
+  font: inherit;
+  line-height: inherit;
+  tab-size: 2;
+  white-space: pre-wrap;
+  word-break: keep-all;
+  overflow-wrap: break-word;
+}
+
+.remote-editor-input::selection {
+  background: rgba(119, 215, 255, 0.22);
+}
+
+.remote-editor-code {
+  min-height: 100%;
+  padding: 18px 22px;
+  color: var(--color-text);
+}
+
+.remote-editor-code .token.comment,
+.remote-editor-code .token.prolog,
+.remote-editor-code .token.doctype,
+.remote-editor-code .token.cdata {
+  color: rgba(149, 166, 190, 0.76);
+}
+
+.remote-editor-code .token.punctuation,
+.remote-editor-code .token.operator {
+  color: #b8c2d4;
+}
+
+.remote-editor-code .token.property,
+.remote-editor-code .token.keyword,
+.remote-editor-code .token.atrule,
+.remote-editor-code .token.selector,
+.remote-editor-code .token.tag {
+  color: #83cbe8;
+}
+
+.remote-editor-code .token.string,
+.remote-editor-code .token.char,
+.remote-editor-code .token.attr-value,
+.remote-editor-code .token.inserted {
+  color: #a8d69a;
+}
+
+.remote-editor-code .token.number,
+.remote-editor-code .token.boolean,
+.remote-editor-code .token.constant,
+.remote-editor-code .token.symbol {
+  color: #d9b47d;
+}
+
+.remote-editor-code .token.function,
+.remote-editor-code .token.class-name,
+.remote-editor-code .token.builtin {
+  color: #a6b9ff;
+}
+
+.remote-editor-code .token.regex,
+.remote-editor-code .token.important,
+.remote-editor-code .token.variable,
+.remote-editor-code .token.deleted {
+  color: #eea481;
+}
+
+.remote-editor-code .token.entity,
+.remote-editor-code .token.url,
+.remote-editor-code .token.namespace {
+  color: #c2cad8;
+}
+
+.remote-editor-error {
+  padding: 0 22px;
+  color: var(--color-danger);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.remote-editor-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 22px 20px;
+  border-top: 1px solid rgba(119, 215, 255, 0.12);
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.remote-editor-actions-spacer {
+  flex: 1 1 auto;
+}
+
+.remote-editor-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 92px;
+  height: 36px;
+  padding: 0 14px;
+  border: 1px solid rgba(119, 215, 255, 0.14);
+  border-radius: 8px;
+  background: rgba(9, 14, 22, 0.72);
+  color: var(--color-text);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease,
+    color 160ms ease,
+    opacity 160ms ease;
+}
+
+.remote-editor-button:hover,
+.remote-editor-button:focus-visible {
+  border-color: rgba(119, 215, 255, 0.3);
+  background: rgba(12, 18, 28, 0.92);
+  outline: none;
+}
+
+.remote-editor-button.is-primary {
+  border-color: rgba(119, 215, 255, 0.28);
+  background: rgba(119, 215, 255, 0.16);
+}
+
+.remote-editor-button.is-primary:hover,
+.remote-editor-button.is-primary:focus-visible {
+  border-color: rgba(119, 215, 255, 0.4);
+  background: rgba(119, 215, 255, 0.22);
+}
+
+.remote-editor-button:disabled {
+  opacity: 0.58;
+  cursor: default;
+}
+
 .settings-dialog {
   display: grid;
   gap: 18px;
@@ -2830,15 +3151,44 @@ body {
     gap: 8px;
   }
 
+  .remote-editor-dialog-shell,
   .settings-dialog-shell,
   .ssh-config-dialog-shell {
     padding: 16px;
+  }
+
+  .remote-editor-dialog {
+    height: calc(100vh - 32px);
+    max-height: calc(100vh - 32px);
   }
 
   .settings-dialog,
   .ssh-config-card {
     padding: 18px;
     border-radius: 10px;
+  }
+
+  .remote-editor-header,
+  .remote-editor-meta,
+  .remote-editor-error,
+  .remote-editor-actions,
+  .remote-editor-line-numbers,
+  .remote-editor-code,
+  .remote-editor-input {
+    padding-left: 18px;
+    padding-right: 18px;
+  }
+
+  .remote-editor-actions {
+    flex-wrap: wrap;
+  }
+
+  .remote-editor-actions-spacer {
+    display: none;
+  }
+
+  .remote-editor-button {
+    flex: 1 1 0;
   }
 
   .settings-panel {

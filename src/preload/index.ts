@@ -9,6 +9,7 @@ import type {
   SshDownloadProgressEvent,
   SshKnownHostsRemovalResult,
   SshRemoteDirectoryListing,
+  SshRemoteTextFile,
   SshServerConfig,
   SshUploadProgressEvent
 } from '../shared/ssh'
@@ -116,6 +117,11 @@ const ssh: SshApi = {
       path
     }) as Promise<SshRemoteDirectoryListing>,
   listConfigs: () => ipcRenderer.invoke('ssh:list-configs'),
+  readTextFile: (configId, path) =>
+    ipcRenderer.invoke('ssh:read-text-file', {
+      configId,
+      path
+    }) as Promise<SshRemoteTextFile>,
   removeKnownHosts: (host, port) =>
     ipcRenderer.invoke('ssh:remove-known-hosts', {
       host,
@@ -158,6 +164,12 @@ const ssh: SshApi = {
       configId,
       localPaths,
       targetPath
+    }),
+  writeTextFile: (configId, path, content) =>
+    ipcRenderer.invoke('ssh:write-text-file', {
+      configId,
+      content,
+      path
     }),
   onConfigAdded: (callback) => {
     const listener = (_event: Electron.IpcRendererEvent, payload: SshServerConfig): void => {

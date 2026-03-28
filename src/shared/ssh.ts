@@ -66,6 +66,12 @@ export interface SshDownloadProgressEvent {
   transferredBytes: number
 }
 
+export interface SshRemoteTextFile {
+  content: string
+  path: string
+  size: number
+}
+
 export interface SshApi {
   connect: (configId: string, cwd?: string) => Promise<TerminalCreateResult>
   deleteConfig: (configId: string) => Promise<void>
@@ -77,8 +83,10 @@ export interface SshApi {
   onConfigDeleted: (callback: (configId: string) => void) => () => void
   onDownloadProgress: (callback: (event: SshDownloadProgressEvent) => void) => () => void
   onUploadProgress: (callback: (event: SshUploadProgressEvent) => void) => () => void
+  readTextFile: (configId: string, path: string) => Promise<SshRemoteTextFile>
   removeKnownHosts: (host: string, port: number) => Promise<SshKnownHostsRemovalResult>
   renamePath: (configId: string, path: string, nextPath: string) => Promise<void>
   saveConfig: (config: SshServerConfigSaveInput) => Promise<void>
   uploadPaths: (configId: string, targetPath: string, localPaths: string[]) => Promise<void>
+  writeTextFile: (configId: string, path: string, content: string) => Promise<void>
 }
