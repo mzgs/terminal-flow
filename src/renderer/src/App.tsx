@@ -1,4 +1,32 @@
-import { type CSSProperties, useCallback, useEffect, useId, useRef, useState } from 'react'
+import { type CSSProperties, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
+import { css } from '@codemirror/lang-css'
+import { html } from '@codemirror/lang-html'
+import { java } from '@codemirror/lang-java'
+import { javascript } from '@codemirror/lang-javascript'
+import { json } from '@codemirror/lang-json'
+import {
+  HighlightStyle,
+  StreamLanguage,
+  indentUnit,
+  syntaxHighlighting
+} from '@codemirror/language'
+import { markdown } from '@codemirror/lang-markdown'
+import { python } from '@codemirror/lang-python'
+import { sql } from '@codemirror/lang-sql'
+import { type Extension, EditorState } from '@codemirror/state'
+import { EditorView, keymap } from '@codemirror/view'
+import { xml } from '@codemirror/lang-xml'
+import { yaml } from '@codemirror/lang-yaml'
+import { diff as diffLanguage } from '@codemirror/legacy-modes/mode/diff'
+import { dockerFile } from '@codemirror/legacy-modes/mode/dockerfile'
+import { nginx as nginxLanguage } from '@codemirror/legacy-modes/mode/nginx'
+import { powerShell } from '@codemirror/legacy-modes/mode/powershell'
+import { properties as propertiesLanguage } from '@codemirror/legacy-modes/mode/properties'
+import { sass } from '@codemirror/legacy-modes/mode/sass'
+import { shell as shellLanguage } from '@codemirror/legacy-modes/mode/shell'
+import { toml as tomlLanguage } from '@codemirror/legacy-modes/mode/toml'
+import { tags as t } from '@lezer/highlight'
+import CodeMirror from '@uiw/react-codemirror'
 import { FitAddon } from '@xterm/addon-fit'
 import { Terminal, type IBufferCell, type ITheme } from '@xterm/xterm'
 import {
@@ -35,33 +63,6 @@ import {
 import type { LucideIcon } from 'lucide-react'
 import { Reorder, useDragControls } from 'motion/react'
 import Modal from 'react-modal'
-import { PrismLight as SyntaxHighlighter } from 'react-syntax-highlighter'
-import bashSyntax from 'react-syntax-highlighter/dist/esm/languages/prism/bash'
-import batchSyntax from 'react-syntax-highlighter/dist/esm/languages/prism/batch'
-import cssSyntax from 'react-syntax-highlighter/dist/esm/languages/prism/css'
-import csvSyntax from 'react-syntax-highlighter/dist/esm/languages/prism/csv'
-import diffSyntax from 'react-syntax-highlighter/dist/esm/languages/prism/diff'
-import dockerSyntax from 'react-syntax-highlighter/dist/esm/languages/prism/docker'
-import editorconfigSyntax from 'react-syntax-highlighter/dist/esm/languages/prism/editorconfig'
-import ignoreSyntax from 'react-syntax-highlighter/dist/esm/languages/prism/ignore'
-import iniSyntax from 'react-syntax-highlighter/dist/esm/languages/prism/ini'
-import javaSyntax from 'react-syntax-highlighter/dist/esm/languages/prism/java'
-import javascriptSyntax from 'react-syntax-highlighter/dist/esm/languages/prism/javascript'
-import jsonSyntax from 'react-syntax-highlighter/dist/esm/languages/prism/json'
-import jsxSyntax from 'react-syntax-highlighter/dist/esm/languages/prism/jsx'
-import makefileSyntax from 'react-syntax-highlighter/dist/esm/languages/prism/makefile'
-import markdownSyntax from 'react-syntax-highlighter/dist/esm/languages/prism/markdown'
-import markupSyntax from 'react-syntax-highlighter/dist/esm/languages/prism/markup'
-import nginxSyntax from 'react-syntax-highlighter/dist/esm/languages/prism/nginx'
-import powershellSyntax from 'react-syntax-highlighter/dist/esm/languages/prism/powershell'
-import propertiesSyntax from 'react-syntax-highlighter/dist/esm/languages/prism/properties'
-import pythonSyntax from 'react-syntax-highlighter/dist/esm/languages/prism/python'
-import scssSyntax from 'react-syntax-highlighter/dist/esm/languages/prism/scss'
-import sqlSyntax from 'react-syntax-highlighter/dist/esm/languages/prism/sql'
-import tomlSyntax from 'react-syntax-highlighter/dist/esm/languages/prism/toml'
-import tsxSyntax from 'react-syntax-highlighter/dist/esm/languages/prism/tsx'
-import typescriptSyntax from 'react-syntax-highlighter/dist/esm/languages/prism/typescript'
-import yamlSyntax from 'react-syntax-highlighter/dist/esm/languages/prism/yaml'
 import '@xterm/xterm/css/xterm.css'
 import type {
   AppSettings,
@@ -82,39 +83,6 @@ import {
   type SshUploadProgressEvent
 } from '../../shared/ssh'
 import type { TerminalCreateOptions, TerminalCreateResult } from '../../shared/terminal'
-
-const sshRemoteEditorSyntaxRegistrations = [
-  ['bash', bashSyntax],
-  ['batch', batchSyntax],
-  ['css', cssSyntax],
-  ['csv', csvSyntax],
-  ['diff', diffSyntax],
-  ['docker', dockerSyntax],
-  ['editorconfig', editorconfigSyntax],
-  ['ignore', ignoreSyntax],
-  ['ini', iniSyntax],
-  ['java', javaSyntax],
-  ['javascript', javascriptSyntax],
-  ['json', jsonSyntax],
-  ['jsx', jsxSyntax],
-  ['makefile', makefileSyntax],
-  ['markdown', markdownSyntax],
-  ['markup', markupSyntax],
-  ['nginx', nginxSyntax],
-  ['powershell', powershellSyntax],
-  ['properties', propertiesSyntax],
-  ['python', pythonSyntax],
-  ['scss', scssSyntax],
-  ['sql', sqlSyntax],
-  ['toml', tomlSyntax],
-  ['tsx', tsxSyntax],
-  ['typescript', typescriptSyntax],
-  ['yaml', yamlSyntax]
-] as const
-
-for (const [languageName, languageDefinition] of sshRemoteEditorSyntaxRegistrations) {
-  SyntaxHighlighter.registerLanguage(languageName, languageDefinition)
-}
 
 type TabStatus = 'connecting' | 'ready' | 'closed'
 
@@ -199,8 +167,13 @@ interface SshRemoteEditorState {
   tabId: string
 }
 
+interface SshRemoteEditorLoadingState {
+  fileName: string
+  path: string
+}
+
 interface SshRemoteEditorSyntaxLanguage {
-  id: string
+  extensions: Extension[]
   label: string
 }
 
@@ -504,112 +477,261 @@ const sshBrowserFileIconBySuffix = new Map<string, SshBrowserFileIconDescriptor>
   ['.conf', sshBrowserTextFileIconDescriptor],
   ['.csv', sshBrowserTextFileIconDescriptor]
 ])
+const sshRemoteEditorShellExtensions = [StreamLanguage.define(shellLanguage)]
+const sshRemoteEditorPropertiesExtensions = [StreamLanguage.define(propertiesLanguage)]
+const sshRemoteEditorDiffExtensions = [StreamLanguage.define(diffLanguage)]
+const sshRemoteEditorDockerExtensions = [StreamLanguage.define(dockerFile)]
+const sshRemoteEditorNginxExtensions = [StreamLanguage.define(nginxLanguage)]
+const sshRemoteEditorPowerShellExtensions = [StreamLanguage.define(powerShell)]
+const sshRemoteEditorScssExtensions = [StreamLanguage.define(sass)]
+const sshRemoteEditorTomlExtensions = [StreamLanguage.define(tomlLanguage)]
+const sshRemoteEditorCssExtensions = [css()]
+const sshRemoteEditorHtmlExtensions = [html()]
+const sshRemoteEditorJavaExtensions = [java()]
+const sshRemoteEditorJavaScriptExtensions = [javascript()]
+const sshRemoteEditorJsonExtensions = [json()]
+const sshRemoteEditorJsxExtensions = [javascript({ jsx: true })]
+const sshRemoteEditorMarkdownExtensions = [markdown()]
+const sshRemoteEditorPythonExtensions = [python()]
+const sshRemoteEditorSqlExtensions = [sql()]
+const sshRemoteEditorTypeScriptExtensions = [javascript({ typescript: true })]
+const sshRemoteEditorTsxExtensions = [javascript({ jsx: true, typescript: true })]
+const sshRemoteEditorXmlExtensions = [xml()]
+const sshRemoteEditorYamlExtensions = [yaml()]
+const sshRemoteEditorHighlighting = syntaxHighlighting(
+  HighlightStyle.define([
+    {
+      tag: [t.comment, t.lineComment, t.blockComment, t.docComment, t.meta],
+      color: 'rgba(149, 166, 190, 0.76)'
+    },
+    {
+      tag: [t.punctuation, t.separator, t.contentSeparator, t.angleBracket, t.bracket],
+      color: '#b8c2d4'
+    },
+    {
+      tag: [t.operator, t.operatorKeyword],
+      color: '#b8c2d4'
+    },
+    {
+      tag: [
+        t.keyword,
+        t.controlKeyword,
+        t.definitionKeyword,
+        t.moduleKeyword,
+        t.modifier,
+        t.tagName
+      ],
+      color: '#83cbe8'
+    },
+    {
+      tag: [t.attributeName, t.propertyName, t.labelName],
+      color: '#83cbe8'
+    },
+    {
+      tag: [t.string, t.special(t.string), t.inserted],
+      color: '#a8d69a'
+    },
+    {
+      tag: [t.number, t.bool, t.null, t.atom],
+      color: '#d9b47d'
+    },
+    {
+      tag: [t.function(t.variableName), t.function(t.propertyName), t.macroName],
+      color: '#a6b9ff'
+    },
+    {
+      tag: [t.typeName, t.className, t.namespace],
+      color: '#a6b9ff'
+    },
+    {
+      tag: [t.regexp, t.escape, t.deleted, t.processingInstruction],
+      color: '#eea481'
+    },
+    {
+      tag: [t.variableName, t.self],
+      color: '#c2cad8'
+    },
+    {
+      tag: t.invalid,
+      color: '#eea481',
+      textDecoration: 'underline'
+    }
+  ])
+)
+const sshRemoteEditorCodeMirrorTheme = EditorView.theme(
+  {
+    '&': {
+      height: '100%',
+      backgroundColor: '#090e16',
+      color: 'var(--color-text)',
+      fontSize: '13px'
+    },
+    '&.cm-focused': {
+      outline: 'none'
+    },
+    '.cm-scroller': {
+      height: '100%',
+      overflow: 'auto',
+      padding: '18px 0',
+      fontFamily: "'JetBrains Mono Variable', 'IBM Plex Mono', monospace",
+      lineHeight: '1.6'
+    },
+    '.cm-content': {
+      minHeight: '100%',
+      caretColor: '#f3f6fc'
+    },
+    '.cm-line': {
+      padding: '0 var(--remote-editor-editor-padding-x, 22px)'
+    },
+    '.cm-gutters': {
+      minHeight: '100%',
+      borderRight: '1px solid rgba(119, 215, 255, 0.12)',
+      backgroundColor: 'rgba(6, 12, 19, 0.92)',
+      color: 'rgba(149, 166, 190, 0.7)'
+    },
+    '.cm-gutter': {
+      minHeight: '100%'
+    },
+    '.cm-gutterElement': {
+      padding: '0 8px 0 10px',
+      fontVariantNumeric: 'tabular-nums'
+    },
+    '.cm-activeLine': {
+      backgroundColor: 'rgba(255, 255, 255, 0.03)'
+    },
+    '.cm-activeLineGutter': {
+      backgroundColor: 'rgba(255, 255, 255, 0.03)'
+    },
+    '.cm-cursor, .cm-dropCursor': {
+      borderLeftColor: '#f3f6fc'
+    },
+    '.cm-selectionBackground': {
+      backgroundColor: 'rgba(119, 215, 255, 0.22) !important'
+    },
+    '.cm-content ::selection': {
+      backgroundColor: 'rgba(119, 215, 255, 0.22)'
+    }
+  },
+  { dark: true }
+)
+const sshRemoteEditorBaseExtensions = [
+  EditorState.tabSize.of(2),
+  indentUnit.of('  '),
+  EditorView.lineWrapping,
+  EditorView.contentAttributes.of({ spellcheck: 'false' }),
+  sshRemoteEditorHighlighting,
+  sshRemoteEditorCodeMirrorTheme
+]
 const sshRemoteEditorPlainLanguage: SshRemoteEditorSyntaxLanguage = {
-  id: 'text',
+  extensions: [],
   label: 'Plain text'
 }
 const sshRemoteEditorBashLanguage: SshRemoteEditorSyntaxLanguage = {
-  id: 'bash',
+  extensions: sshRemoteEditorShellExtensions,
   label: 'Shell'
 }
 const sshRemoteEditorBatchLanguage: SshRemoteEditorSyntaxLanguage = {
-  id: 'batch',
+  extensions: [],
   label: 'Batch'
 }
 const sshRemoteEditorCssLanguage: SshRemoteEditorSyntaxLanguage = {
-  id: 'css',
+  extensions: sshRemoteEditorCssExtensions,
   label: 'CSS'
 }
 const sshRemoteEditorCsvLanguage: SshRemoteEditorSyntaxLanguage = {
-  id: 'csv',
+  extensions: [],
   label: 'CSV'
 }
 const sshRemoteEditorDiffLanguage: SshRemoteEditorSyntaxLanguage = {
-  id: 'diff',
+  extensions: sshRemoteEditorDiffExtensions,
   label: 'Diff'
 }
 const sshRemoteEditorDockerLanguage: SshRemoteEditorSyntaxLanguage = {
-  id: 'docker',
+  extensions: sshRemoteEditorDockerExtensions,
   label: 'Dockerfile'
 }
 const sshRemoteEditorEditorConfigLanguage: SshRemoteEditorSyntaxLanguage = {
-  id: 'editorconfig',
+  extensions: sshRemoteEditorPropertiesExtensions,
   label: 'EditorConfig'
 }
 const sshRemoteEditorIgnoreLanguage: SshRemoteEditorSyntaxLanguage = {
-  id: 'ignore',
+  extensions: [],
   label: 'Ignore rules'
 }
 const sshRemoteEditorIniLanguage: SshRemoteEditorSyntaxLanguage = {
-  id: 'ini',
+  extensions: sshRemoteEditorPropertiesExtensions,
   label: 'INI'
 }
 const sshRemoteEditorJavaLanguage: SshRemoteEditorSyntaxLanguage = {
-  id: 'java',
+  extensions: sshRemoteEditorJavaExtensions,
   label: 'Java'
 }
 const sshRemoteEditorJavaScriptLanguage: SshRemoteEditorSyntaxLanguage = {
-  id: 'javascript',
+  extensions: sshRemoteEditorJavaScriptExtensions,
   label: 'JavaScript'
 }
 const sshRemoteEditorJsonLanguage: SshRemoteEditorSyntaxLanguage = {
-  id: 'json',
+  extensions: sshRemoteEditorJsonExtensions,
   label: 'JSON'
 }
 const sshRemoteEditorJsxLanguage: SshRemoteEditorSyntaxLanguage = {
-  id: 'jsx',
+  extensions: sshRemoteEditorJsxExtensions,
   label: 'JSX'
 }
 const sshRemoteEditorMakefileLanguage: SshRemoteEditorSyntaxLanguage = {
-  id: 'makefile',
+  extensions: [],
   label: 'Makefile'
 }
 const sshRemoteEditorMarkdownLanguage: SshRemoteEditorSyntaxLanguage = {
-  id: 'markdown',
+  extensions: sshRemoteEditorMarkdownExtensions,
   label: 'Markdown'
 }
-const sshRemoteEditorMarkupLanguage: SshRemoteEditorSyntaxLanguage = {
-  id: 'markup',
-  label: 'Markup'
+const sshRemoteEditorHtmlLanguage: SshRemoteEditorSyntaxLanguage = {
+  extensions: sshRemoteEditorHtmlExtensions,
+  label: 'HTML'
+}
+const sshRemoteEditorXmlLanguage: SshRemoteEditorSyntaxLanguage = {
+  extensions: sshRemoteEditorXmlExtensions,
+  label: 'XML'
 }
 const sshRemoteEditorNginxLanguage: SshRemoteEditorSyntaxLanguage = {
-  id: 'nginx',
+  extensions: sshRemoteEditorNginxExtensions,
   label: 'Nginx'
 }
 const sshRemoteEditorPowerShellLanguage: SshRemoteEditorSyntaxLanguage = {
-  id: 'powershell',
+  extensions: sshRemoteEditorPowerShellExtensions,
   label: 'PowerShell'
 }
 const sshRemoteEditorPropertiesLanguage: SshRemoteEditorSyntaxLanguage = {
-  id: 'properties',
+  extensions: sshRemoteEditorPropertiesExtensions,
   label: 'Properties'
 }
 const sshRemoteEditorPythonLanguage: SshRemoteEditorSyntaxLanguage = {
-  id: 'python',
+  extensions: sshRemoteEditorPythonExtensions,
   label: 'Python'
 }
 const sshRemoteEditorScssLanguage: SshRemoteEditorSyntaxLanguage = {
-  id: 'scss',
+  extensions: sshRemoteEditorScssExtensions,
   label: 'SCSS'
 }
 const sshRemoteEditorSqlLanguage: SshRemoteEditorSyntaxLanguage = {
-  id: 'sql',
+  extensions: sshRemoteEditorSqlExtensions,
   label: 'SQL'
 }
 const sshRemoteEditorTomlLanguage: SshRemoteEditorSyntaxLanguage = {
-  id: 'toml',
+  extensions: sshRemoteEditorTomlExtensions,
   label: 'TOML'
 }
 const sshRemoteEditorTsxLanguage: SshRemoteEditorSyntaxLanguage = {
-  id: 'tsx',
+  extensions: sshRemoteEditorTsxExtensions,
   label: 'TSX'
 }
 const sshRemoteEditorTypeScriptLanguage: SshRemoteEditorSyntaxLanguage = {
-  id: 'typescript',
+  extensions: sshRemoteEditorTypeScriptExtensions,
   label: 'TypeScript'
 }
 const sshRemoteEditorYamlLanguage: SshRemoteEditorSyntaxLanguage = {
-  id: 'yaml',
+  extensions: sshRemoteEditorYamlExtensions,
   label: 'YAML'
 }
 const sshRemoteEditorLanguageByExactName = new Map<string, SshRemoteEditorSyntaxLanguage>([
@@ -644,8 +766,8 @@ const sshRemoteEditorLanguageBySuffix = new Map<string, SshRemoteEditorSyntaxLan
   ['.diff', sshRemoteEditorDiffLanguage],
   ['.envrc', sshRemoteEditorBashLanguage],
   ['.gitignore', sshRemoteEditorIgnoreLanguage],
-  ['.html', sshRemoteEditorMarkupLanguage],
-  ['.htm', sshRemoteEditorMarkupLanguage],
+  ['.html', sshRemoteEditorHtmlLanguage],
+  ['.htm', sshRemoteEditorHtmlLanguage],
   ['.ini', sshRemoteEditorIniLanguage],
   ['.java', sshRemoteEditorJavaLanguage],
   ['.js', sshRemoteEditorJavaScriptLanguage],
@@ -665,11 +787,11 @@ const sshRemoteEditorLanguageBySuffix = new Map<string, SshRemoteEditorSyntaxLan
   ['.scss', sshRemoteEditorScssLanguage],
   ['.sh', sshRemoteEditorBashLanguage],
   ['.sql', sshRemoteEditorSqlLanguage],
-  ['.svg', sshRemoteEditorMarkupLanguage],
+  ['.svg', sshRemoteEditorXmlLanguage],
   ['.toml', sshRemoteEditorTomlLanguage],
   ['.ts', sshRemoteEditorTypeScriptLanguage],
   ['.tsx', sshRemoteEditorTsxLanguage],
-  ['.xml', sshRemoteEditorMarkupLanguage],
+  ['.xml', sshRemoteEditorXmlLanguage],
   ['.yaml', sshRemoteEditorYamlLanguage],
   ['.yml', sshRemoteEditorYamlLanguage],
   ['.zsh', sshRemoteEditorBashLanguage]
@@ -2035,37 +2157,6 @@ function getSshRemoteEditorSyntaxLanguage(path: string): SshRemoteEditorSyntaxLa
   }
 
   return sshRemoteEditorPlainLanguage
-}
-
-function highlightSshRemoteEditorContent(
-  content: string,
-  language: SshRemoteEditorSyntaxLanguage
-): React.JSX.Element {
-  return (
-    <SyntaxHighlighter
-      className="remote-editor-code"
-      codeTagProps={{
-        style: {
-          fontFamily: 'inherit',
-          whiteSpace: 'inherit'
-        }
-      }}
-      customStyle={{
-        background: 'transparent',
-        margin: 0,
-        minHeight: '100%',
-        padding: 0
-      }}
-      language={language.id}
-      PreTag="div"
-      CodeTag="div"
-      useInlineStyles={false}
-      wrapLongLines
-      wrapLines
-    >
-      {content === '' ? ' ' : content}
-    </SyntaxHighlighter>
-  )
 }
 
 function formatDataSize(bytes: number): string {
@@ -4315,6 +4406,37 @@ interface SshRemoteEditorDialogProps {
   onSave: () => void
 }
 
+interface SshRemoteEditorLoadingDialogProps {
+  loadingState: SshRemoteEditorLoadingState
+}
+
+function SshRemoteEditorLoadingDialog({
+  loadingState
+}: SshRemoteEditorLoadingDialogProps): React.JSX.Element {
+  return (
+    <Modal
+      appElement={document.getElementById('root') ?? undefined}
+      bodyOpenClassName="ssh-config-modal-open"
+      className="remote-editor-loading-dialog"
+      contentLabel={`Opening ${loadingState.fileName}`}
+      isOpen
+      overlayClassName="remote-editor-dialog-shell"
+      shouldCloseOnEsc={false}
+      shouldCloseOnOverlayClick={false}
+    >
+      <div className="remote-editor-loading-card">
+        <div aria-hidden="true" className="remote-editor-loading-indicator" />
+        <div className="remote-editor-loading-copy">
+          <h2 className="remote-editor-loading-title">Opening editor</h2>
+          <p className="remote-editor-loading-path" title={loadingState.path}>
+            {loadingState.path}
+          </p>
+        </div>
+      </div>
+    </Modal>
+  )
+}
+
 function SshRemoteEditorDialog({
   editorState,
   onChangeContent,
@@ -4324,17 +4446,27 @@ function SshRemoteEditorDialog({
 }: SshRemoteEditorDialogProps): React.JSX.Element {
   const titleId = useId()
   const pathId = `${titleId}-path`
-  const highlightLayerRef = useRef<HTMLDivElement | null>(null)
-  const lineNumberGutterRef = useRef<HTMLDivElement | null>(null)
   const fileName = getRemotePathBaseName(editorState.path)
   const editorLanguage = getSshRemoteEditorSyntaxLanguage(editorState.path)
   const isDirty = editorState.content !== editorState.initialContent
   const lineCount = editorState.content === '' ? 1 : editorState.content.split(/\r\n|\r|\n/).length
-  const lineNumberDigits = Math.max(2, String(lineCount).length)
-  const lineNumberGutterWidth = Math.max(44, 24 + lineNumberDigits * 9)
-  const editorBodyStyle = {
-    '--remote-editor-line-number-width': `${lineNumberGutterWidth}px`
-  } as CSSProperties
+  const editorExtensions = useMemo(
+    () => [
+      ...sshRemoteEditorBaseExtensions,
+      ...editorLanguage.extensions,
+      keymap.of([
+        {
+          key: 'Mod-s',
+          preventDefault: true,
+          run: () => {
+            onSave()
+            return true
+          }
+        }
+      ])
+    ],
+    [editorLanguage.extensions, onSave]
+  )
 
   const handleSubmit = useCallback(
     (event: React.FormEvent<HTMLFormElement>): void => {
@@ -4343,47 +4475,6 @@ function SshRemoteEditorDialog({
     },
     [onSave]
   )
-
-  const handleTextareaKeyDown = useCallback(
-    (event: React.KeyboardEvent<HTMLTextAreaElement>): void => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') {
-        event.preventDefault()
-        onSave()
-        return
-      }
-
-      if (event.key !== 'Tab') {
-        return
-      }
-
-      event.preventDefault()
-
-      const target = event.currentTarget
-      const indentation = '  '
-      const selectionStart = target.selectionStart
-      const selectionEnd = target.selectionEnd
-      const nextContent = `${editorState.content.slice(0, selectionStart)}${indentation}${editorState.content.slice(selectionEnd)}`
-
-      onChangeContent(nextContent)
-
-      window.requestAnimationFrame(() => {
-        target.selectionStart = selectionStart + indentation.length
-        target.selectionEnd = selectionStart + indentation.length
-      })
-    },
-    [editorState.content, onChangeContent, onSave]
-  )
-
-  const handleEditorScroll = useCallback((event: React.UIEvent<HTMLTextAreaElement>): void => {
-    if (highlightLayerRef.current) {
-      highlightLayerRef.current.scrollLeft = event.currentTarget.scrollLeft
-      highlightLayerRef.current.scrollTop = event.currentTarget.scrollTop
-    }
-
-    if (lineNumberGutterRef.current) {
-      lineNumberGutterRef.current.scrollTop = event.currentTarget.scrollTop
-    }
-  }, [])
 
   return (
     <Modal
@@ -4432,31 +4523,20 @@ function SshRemoteEditorDialog({
           <span>{isDirty ? 'Unsaved changes' : 'Saved'}</span>
           <span>Ctrl/Cmd+S to save</span>
         </div>
-        <div className="remote-editor-body" style={editorBodyStyle}>
-          <div aria-hidden="true" className="remote-editor-gutter" ref={lineNumberGutterRef}>
-            <div className="remote-editor-line-numbers">
-              {Array.from({ length: lineCount }, (_unused, index) => (
-                <span className="remote-editor-line-number" key={index + 1}>
-                  {index + 1}
-                </span>
-              ))}
-            </div>
-          </div>
+        <div className="remote-editor-body">
           <div className="remote-editor-stage">
-            <div
-              aria-hidden="true"
-              className="remote-editor-highlight-layer"
-              ref={highlightLayerRef}
-            >
-              {highlightSshRemoteEditorContent(editorState.content, editorLanguage)}
-            </div>
-            <textarea
+            <CodeMirror
               autoFocus
-              className="remote-editor-input"
-              onChange={(event) => onChangeContent(event.target.value)}
-              onKeyDown={handleTextareaKeyDown}
-              onScroll={handleEditorScroll}
-              spellCheck={false}
+              basicSetup={{
+                foldGutter: false
+              }}
+              className="remote-editor-codemirror"
+              editable={!editorState.isSaving}
+              extensions={editorExtensions}
+              height="100%"
+              indentWithTab
+              onChange={onChangeContent}
+              theme="none"
               value={editorState.content}
             />
           </div>
@@ -4688,6 +4768,8 @@ function TerminalApp(): React.JSX.Element {
     null
   )
   const [sshUploadProgress, setSshUploadProgress] = useState<SshUploadProgressEvent | null>(null)
+  const [sshRemoteEditorLoadingState, setSshRemoteEditorLoadingState] =
+    useState<SshRemoteEditorLoadingState | null>(null)
   const [sshRemoteEditorState, setSshRemoteEditorState] = useState<SshRemoteEditorState | null>(
     null
   )
@@ -7633,10 +7715,15 @@ function TerminalApp(): React.JSX.Element {
       }))
 
       const remotePath = joinRemoteDirectoryPath(browserState.path, entry.name)
+      setSshRemoteEditorLoadingState({
+        fileName: entry.name,
+        path: remotePath
+      })
 
       void window.api.ssh
         .readTextFile(browserState.configId, remotePath)
         .then((file: SshRemoteTextFile) => {
+          setSshRemoteEditorLoadingState(null)
           setSshRemoteEditorState({
             configId: browserState.configId,
             content: file.content,
@@ -7657,6 +7744,7 @@ function TerminalApp(): React.JSX.Element {
         })
         .catch((error) => {
           const message = error instanceof Error ? error.message : String(error)
+          setSshRemoteEditorLoadingState(null)
 
           updateSshBrowserState(browserState.tabId, (currentState) => ({
             ...currentState,
@@ -8769,6 +8857,9 @@ function TerminalApp(): React.JSX.Element {
             )}
           </div>
         </Modal>
+      ) : null}
+      {sshRemoteEditorLoadingState ? (
+        <SshRemoteEditorLoadingDialog loadingState={sshRemoteEditorLoadingState} />
       ) : null}
       {sshRemoteEditorState ? (
         <SshRemoteEditorDialog

@@ -1419,6 +1419,53 @@ body {
   overflow: hidden;
 }
 
+.remote-editor-loading-dialog {
+  width: min(420px, 100%);
+  border: 1px solid rgba(119, 215, 255, 0.16);
+  border-radius: 10px;
+  background: #0c121c;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+  outline: none;
+}
+
+.remote-editor-loading-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 22px;
+}
+
+.remote-editor-loading-indicator {
+  width: 22px;
+  height: 22px;
+  flex: 0 0 auto;
+  border: 2px solid rgba(119, 215, 255, 0.18);
+  border-top-color: rgba(119, 215, 255, 0.86);
+  border-radius: 999px;
+  animation: remote-editor-loading-spin 800ms linear infinite;
+}
+
+.remote-editor-loading-copy {
+  min-width: 0;
+}
+
+.remote-editor-loading-title {
+  color: var(--color-text);
+  font-size: 15px;
+  line-height: 1.3;
+  font-weight: 600;
+}
+
+.remote-editor-loading-path {
+  overflow: hidden;
+  margin-top: 4px;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .remote-editor-form {
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr) auto auto;
@@ -1520,137 +1567,43 @@ body {
 }
 
 .remote-editor-body {
-  display: grid;
-  grid-template-columns: var(--remote-editor-line-number-width, 44px) minmax(0, 1fr);
-  min-height: 0;
-  background: #090e16;
-}
-
-.remote-editor-gutter {
+  display: flex;
   min-height: 0;
   overflow: hidden;
-  border-right: 1px solid rgba(119, 215, 255, 0.12);
-  background: rgba(6, 12, 19, 0.92);
-  user-select: none;
-}
-
-.remote-editor-line-numbers {
-  min-height: 100%;
-  padding: 18px 8px 18px 10px;
-  color: rgba(149, 166, 190, 0.7);
-  font-family: 'JetBrains Mono Variable', 'IBM Plex Mono', monospace;
-  font-size: 12px;
-  line-height: 1.6;
-  text-align: right;
-}
-
-.remote-editor-line-number {
-  display: block;
+  background: #090e16;
 }
 
 .remote-editor-stage {
-  position: relative;
+  display: flex;
+  flex: 1 1 auto;
   min-width: 0;
   min-height: 0;
-  background: #090e16;
-  color: var(--color-text);
-  font-family: 'JetBrains Mono Variable', 'IBM Plex Mono', monospace;
-  font-size: 13px;
-  line-height: 1.6;
-}
-
-.remote-editor-highlight-layer {
-  position: absolute;
-  inset: 0;
   overflow: hidden;
-  pointer-events: none;
+  background: #090e16;
 }
 
-.remote-editor-input {
-  position: absolute;
-  inset: 0;
-  width: 100%;
+.remote-editor-codemirror {
+  flex: 1 1 auto;
   height: 100%;
-  min-width: 0;
   min-height: 0;
-  padding: 18px 22px;
-  border: 0;
-  resize: none;
-  overflow: auto;
-  background: transparent;
-  color: transparent;
-  -webkit-text-fill-color: transparent;
-  caret-color: #f3f6fc;
-  outline: none;
-  font: inherit;
-  line-height: inherit;
-  tab-size: 2;
-  white-space: pre-wrap;
-  word-break: keep-all;
-  overflow-wrap: break-word;
 }
 
-.remote-editor-input::selection {
-  background: rgba(119, 215, 255, 0.22);
+.remote-editor-codemirror .cm-editor {
+  height: 100%;
+  min-height: 0;
 }
 
-.remote-editor-code {
+.remote-editor-codemirror .cm-scroller {
+  height: 100%;
   min-height: 100%;
-  padding: 18px 22px;
-  color: var(--color-text);
 }
 
-.remote-editor-code .token.comment,
-.remote-editor-code .token.prolog,
-.remote-editor-code .token.doctype,
-.remote-editor-code .token.cdata {
-  color: rgba(149, 166, 190, 0.76);
+.remote-editor-codemirror .cm-gutterElement {
+  white-space: nowrap;
 }
 
-.remote-editor-code .token.punctuation,
-.remote-editor-code .token.operator {
-  color: #b8c2d4;
-}
-
-.remote-editor-code .token.property,
-.remote-editor-code .token.keyword,
-.remote-editor-code .token.atrule,
-.remote-editor-code .token.selector,
-.remote-editor-code .token.tag {
-  color: #83cbe8;
-}
-
-.remote-editor-code .token.string,
-.remote-editor-code .token.char,
-.remote-editor-code .token.attr-value,
-.remote-editor-code .token.inserted {
-  color: #a8d69a;
-}
-
-.remote-editor-code .token.number,
-.remote-editor-code .token.boolean,
-.remote-editor-code .token.constant,
-.remote-editor-code .token.symbol {
-  color: #d9b47d;
-}
-
-.remote-editor-code .token.function,
-.remote-editor-code .token.class-name,
-.remote-editor-code .token.builtin {
-  color: #a6b9ff;
-}
-
-.remote-editor-code .token.regex,
-.remote-editor-code .token.important,
-.remote-editor-code .token.variable,
-.remote-editor-code .token.deleted {
-  color: #eea481;
-}
-
-.remote-editor-code .token.entity,
-.remote-editor-code .token.url,
-.remote-editor-code .token.namespace {
-  color: #c2cad8;
+.remote-editor-codemirror .cm-focused {
+  outline: none;
 }
 
 .remote-editor-error {
@@ -1716,6 +1669,12 @@ body {
 .remote-editor-button:disabled {
   opacity: 0.58;
   cursor: default;
+}
+
+@keyframes remote-editor-loading-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .settings-dialog {
@@ -3171,12 +3130,13 @@ body {
   .remote-editor-header,
   .remote-editor-meta,
   .remote-editor-error,
-  .remote-editor-actions,
-  .remote-editor-line-numbers,
-  .remote-editor-code,
-  .remote-editor-input {
+  .remote-editor-actions {
     padding-left: 18px;
     padding-right: 18px;
+  }
+
+  .remote-editor-stage {
+    --remote-editor-editor-padding-x: 18px;
   }
 
   .remote-editor-actions {
