@@ -47,6 +47,7 @@ import {
   ChevronUp,
   ClipboardCopy,
   ClipboardPaste,
+  Columns2,
   Download,
   File,
   FileArchive,
@@ -64,6 +65,7 @@ import {
   Pencil,
   Plus,
   RefreshCw,
+  Rows2,
   Search,
   Server,
   Settings,
@@ -100,8 +102,9 @@ import {
 import type { TerminalCreateOptions, TerminalCreateResult } from '../../shared/terminal'
 
 type TabStatus = 'connecting' | 'ready' | 'closed'
+type PaneSplitOrientation = 'columns' | 'rows'
 
-interface TabRecord {
+interface TabPaneRecord {
   id: string
   outputLines?: string[]
   reconnectAttempt?: number
@@ -113,9 +116,16 @@ interface TabRecord {
   errorMessage?: string
 }
 
+interface TabRecord extends TabPaneRecord {
+  activePaneId: string
+  paneOrientation: PaneSplitOrientation | null
+  panes: TabPaneRecord[]
+}
+
 interface TerminalRuntime {
   closed: boolean
   disposed: boolean
+  disposeFocus: { dispose: () => void }
   disposeInput: { dispose: () => void }
   fitAddon: FitAddon
   terminal: Terminal
@@ -170,6 +180,12 @@ interface SshBrowserContextMenuState {
   y: number
 }
 
+interface TabContextMenuState {
+  tabId: string
+  x: number
+  y: number
+}
+
 interface SshBrowserCreateDialogState {
   errorMessage: string | null
   isDirectory: boolean
@@ -212,6 +228,7 @@ interface SshRemoteEditorSyntaxLanguage {
 type TextEditorFile = LocalTextFile | SshRemoteTextFile
 
 interface TerminalContextMenuState {
+  paneId: string
   quickDownloadAction: TerminalQuickDownloadAction | null
   quickExtractAction: TerminalQuickExtractAction | null
   selectionText: string
@@ -334,6 +351,7 @@ const defaultTabTitle = '~'
 const maxPersistedTerminalOutputLines = 500
 const minTerminalFontSize = 10
 const maxTerminalFontSize = 24
+const maxTabPaneCount = 4
 const searchRefreshDebounceMs = 120
 const defaultSshBrowserWidth = 320
 const maxSshBrowserWidth = 640
@@ -1939,6 +1957,89 @@ function getDefaultRestorableTabState(): RestorableTabState {
   return { kind: 'local' }
 }
 
+function createPaneRecord(
+  paneId: string,
+  options: {
+    outputLines?: string[]
+    restoreState: RestorableTabState
+    title: string
+  }
+): TabPaneRecord {
+  return {
+    id: paneId,
+    outputLines: clonePersistedOutputLines(options.outputLines),
+    restoreState: cloneRestorableTabState(options.restoreState),
+    status: 'connecting',
+    terminalId: null,
+    title: options.title
+  }
+}
+
+function getPaneById(
+  tab: Pick<TabRecord, 'activePaneId' | 'panes'>,
+  paneId: string
+): TabPaneRecord | null {
+  return tab.panes.find((pane) => pane.id === paneId) ?? null
+}
+
+function getActivePane(tab: Pick<TabRecord, 'activePaneId' | 'panes'>): TabPaneRecord | null {
+  return getPaneById(tab, tab.activePaneId) ?? tab.panes[0] ?? null
+}
+
+function canSplitTabPane(
+  tab: Pick<TabRecord, 'activePaneId' | 'paneOrientation' | 'panes'>,
+  requestedOrientation: PaneSplitOrientation
+): boolean {
+  return (
+    getActivePane(tab) !== null &&
+    tab.panes.length < maxTabPaneCount &&
+    (tab.paneOrientation === null || tab.paneOrientation === requestedOrientation)
+  )
+}
+
+function canCloseTabPane(tab: Pick<TabRecord, 'activePaneId' | 'panes'>): boolean {
+  return getActivePane(tab) !== null && tab.panes.length > 1
+}
+
+function syncTabWithActivePane(tab: TabRecord): TabRecord {
+  const activePane = getActivePane(tab)
+
+  if (!activePane) {
+    return tab
+  }
+
+  const nextRestoreState =
+    activePane.restoreState.kind === 'ssh'
+      ? {
+          ...activePane.restoreState,
+          ...(tab.restoreState.kind === 'ssh' && tab.restoreState.browserPath
+            ? {
+                browserPath: tab.restoreState.browserPath
+              }
+            : {})
+        }
+      : cloneRestorableTabState(activePane.restoreState)
+
+  if (tab.activePaneId !== activePane.id) {
+    tab = {
+      ...tab,
+      activePaneId: activePane.id
+    }
+  }
+
+  return {
+    ...tab,
+    errorMessage: activePane.errorMessage,
+    exitCode: activePane.exitCode,
+    outputLines: clonePersistedOutputLines(activePane.outputLines),
+    reconnectAttempt: activePane.reconnectAttempt,
+    restoreState: nextRestoreState,
+    status: activePane.status,
+    terminalId: activePane.terminalId,
+    title: activePane.title
+  }
+}
+
 function getDefaultLocalTabCreateOptions(defaultNewTabDirectory: string): CreateTabOptions | null {
   const normalizedDefaultNewTabDirectory = normalizeDefaultNewTabDirectory(defaultNewTabDirectory)
 
@@ -2041,15 +2142,25 @@ function buildCreateTabOptionsFromSessionTab(tab: SessionTabSnapshot): CreateTab
   }
 }
 
+function createTabRecordFromPane(tabId: string, pane: TabPaneRecord): TabRecord {
+  return syncTabWithActivePane({
+    ...pane,
+    activePaneId: pane.id,
+    id: tabId,
+    paneOrientation: null,
+    panes: [pane]
+  })
+}
+
 function createTabRecordFromSessionTab(tab: SessionTabSnapshot): TabRecord {
-  return {
-    id: tab.id,
-    outputLines: clonePersistedOutputLines(tab.outputLines),
-    restoreState: cloneRestorableTabState(tab.restoreState),
-    status: 'connecting',
-    terminalId: null,
-    title: tab.title
-  }
+  return createTabRecordFromPane(
+    tab.id,
+    createPaneRecord(tab.id, {
+      outputLines: tab.outputLines,
+      restoreState: tab.restoreState,
+      title: tab.title
+    })
+  )
 }
 
 function getNextTabSequence(tabs: Array<Pick<SessionTabSnapshot, 'id'>>): number {
@@ -2388,7 +2499,7 @@ function buildTerminalExtractArchiveCommand(
 }
 
 function getTerminalQuickExtractAction(
-  tab: TabRecord,
+  terminalItem: Pick<TabPaneRecord, 'restoreState'>,
   selectionText: string
 ): TerminalQuickExtractAction | null {
   const archivePath = normalizeTerminalSelectionForArchivePath(selectionText)
@@ -2409,7 +2520,7 @@ function getTerminalQuickExtractAction(
   const command = buildTerminalExtractArchiveCommand(
     archivePath,
     suffix,
-    tab.restoreState.kind === 'local' && usesWindowsShellQuoting()
+    terminalItem.restoreState.kind === 'local' && usesWindowsShellQuoting()
   )
 
   return {
@@ -2454,10 +2565,10 @@ function normalizeRemotePath(path: string): string {
 }
 
 function getTerminalQuickDownloadAction(
-  tab: TabRecord,
+  terminalItem: Pick<TabPaneRecord, 'restoreState'>,
   selectionText: string
 ): TerminalQuickDownloadAction | null {
-  if (tab.restoreState.kind !== 'ssh') {
+  if (terminalItem.restoreState.kind !== 'ssh') {
     return null
   }
 
@@ -2475,9 +2586,9 @@ function getTerminalQuickDownloadAction(
     normalizedSelection.startsWith('/')
   ) {
     remotePath = normalizeRemotePath(normalizedSelection)
-  } else if (tab.restoreState.cwd) {
+  } else if (terminalItem.restoreState.cwd) {
     remotePath = normalizeRemotePath(
-      joinRemoteDirectoryPath(tab.restoreState.cwd, normalizedSelection)
+      joinRemoteDirectoryPath(terminalItem.restoreState.cwd, normalizedSelection)
     )
   }
 
@@ -2490,13 +2601,16 @@ function getTerminalQuickDownloadAction(
   }
 
   return {
-    configId: tab.restoreState.configId,
+    configId: terminalItem.restoreState.configId,
     remotePath
   }
 }
 
-function getTerminalQuickLocalEditPath(tab: TabRecord, selectionText: string): string | null {
-  if (tab.restoreState.kind !== 'local') {
+function getTerminalQuickLocalEditPath(
+  terminalItem: Pick<TabPaneRecord, 'restoreState'>,
+  selectionText: string
+): string | null {
+  if (terminalItem.restoreState.kind !== 'local') {
     return null
   }
 
@@ -2513,8 +2627,8 @@ function getTerminalQuickLocalEditPath(tab: TabRecord, selectionText: string): s
 
   const localPath = isAbsoluteLocalPath(normalizedSelection)
     ? normalizedSelection
-    : tab.restoreState.cwd
-      ? joinLocalDirectoryPath(tab.restoreState.cwd, normalizedSelection)
+    : terminalItem.restoreState.cwd
+      ? joinLocalDirectoryPath(terminalItem.restoreState.cwd, normalizedSelection)
       : null
 
   if (!localPath) {
@@ -2679,17 +2793,36 @@ function canEditSshRemoteFile(entry: SshRemoteDirectoryEntry): boolean {
   )
 }
 
-function getTabStatusLabel(tab: TabRecord): string {
-  if (tab.status === 'connecting') {
-    if (tab.restoreState.kind === 'ssh' && typeof tab.reconnectAttempt === 'number') {
+function getTerminalItemStatusLabel(
+  terminalItem: Pick<TabPaneRecord, 'errorMessage' | 'reconnectAttempt' | 'restoreState' | 'status'>
+): string {
+  if (terminalItem.status === 'connecting') {
+    if (
+      terminalItem.restoreState.kind === 'ssh' &&
+      typeof terminalItem.reconnectAttempt === 'number'
+    ) {
       return 'Reconnecting'
     }
 
     return 'Starting'
   }
 
-  if (tab.errorMessage) {
+  if (terminalItem.errorMessage) {
     return 'Failed'
+  }
+
+  return ''
+}
+
+function getTabStatusLabel(tab: TabRecord): string {
+  const terminalStatusLabel = getTerminalItemStatusLabel(tab)
+
+  if (terminalStatusLabel !== '') {
+    return terminalStatusLabel
+  }
+
+  if (tab.panes.length > 1) {
+    return `${tab.panes.length} panes`
   }
 
   return ''
@@ -2867,6 +3000,7 @@ interface ReorderableTabProps {
   index: number
   isActive: boolean
   onActivateTab: (tabId: string) => void
+  onOpenContextMenu: (event: React.MouseEvent<HTMLButtonElement>, tabId: string) => void
   sshServerIcon?: SshServerIcon | null
   tab: TabRecord
 }
@@ -2876,6 +3010,7 @@ function ReorderableTab({
   index,
   isActive,
   onActivateTab,
+  onOpenContextMenu,
   sshServerIcon,
   tab
 }: ReorderableTabProps): React.JSX.Element {
@@ -2921,6 +3056,7 @@ function ReorderableTab({
           closeTab(tab.id)
         }}
         onClick={() => onActivateTab(tab.id)}
+        onContextMenu={(event) => onOpenContextMenu(event, tab.id)}
         onPointerDown={(event) => {
           if (!event.isPrimary || (event.pointerType === 'mouse' && event.button !== 0)) {
             return
@@ -5093,6 +5229,7 @@ function TerminalApp(): React.JSX.Element {
   const [isSshBrowserResizing, setIsSshBrowserResizing] = useState(false)
   const [sshBrowserStates, setSshBrowserStates] = useState<SshBrowserStates>({})
   const [sshBrowserWidths, setSshBrowserWidths] = useState<SshBrowserWidths>({})
+  const [tabContextMenu, setTabContextMenu] = useState<TabContextMenuState | null>(null)
   const [terminalContextMenu, setTerminalContextMenu] = useState<TerminalContextMenuState | null>(
     null
   )
@@ -5152,10 +5289,12 @@ function TerminalApp(): React.JSX.Element {
   const [sshServerBeingEdited, setSshServerBeingEdited] = useState<SshServerConfig | null>(null)
   const [sshServers, setSshServers] = useState<SshServerConfig[]>([])
   const nextTabIdRef = useRef(1)
+  const nextPaneIdRef = useRef(1)
   const workspaceRef = useRef<HTMLDivElement>(null)
   const workspaceShellRef = useRef<HTMLElement>(null)
   const tabStripRef = useRef<HTMLDivElement>(null)
   const sshMenuRef = useRef<HTMLDivElement>(null)
+  const tabContextMenuRef = useRef<HTMLDivElement>(null)
   const terminalContextMenuRef = useRef<HTMLDivElement>(null)
   const sshBrowserContextMenuRef = useRef<HTMLDivElement>(null)
   const tabsRef = useRef<TabRecord[]>([])
@@ -5165,6 +5304,7 @@ function TerminalApp(): React.JSX.Element {
   const activeTabIdRef = useRef<string | null>(null)
   const isSearchOpenRef = useRef(false)
   const hostElementsRef = useRef(new Map<string, HTMLDivElement>())
+  const paneToTabRef = useRef(new Map<string, string>())
   const runtimesRef = useRef(new Map<string, TerminalRuntime>())
   const searchMatchesRef = useRef<SearchMatch[]>([])
   const searchRefreshTimeoutRef = useRef<number | null>(null)
@@ -5179,9 +5319,9 @@ function TerminalApp(): React.JSX.Element {
   const sshDownloadHideTimeoutRef = useRef<number | null>(null)
   const sshUploadHideTimeoutRef = useRef<number | null>(null)
   const sshCwdSequenceBuffersRef = useRef(new Map<number, string>())
-  const terminalToTabRef = useRef(new Map<number, string>())
+  const terminalToPaneRef = useRef(new Map<number, string>())
   const pendingTerminalStateRef = useRef(new Map<number, PendingTerminalState>())
-  const pendingInitialTabStateRef = useRef(new Map<string, CreateTabOptions>())
+  const pendingInitialPaneStateRef = useRef(new Map<string, CreateTabOptions>())
   const initialSessionSnapshotRef = useRef<SessionSnapshot | null | undefined>(undefined)
   const hasInitializedSessionRestoreRef = useRef(false)
   const isUnmountingRef = useRef(false)
@@ -5320,19 +5460,76 @@ function TerminalApp(): React.JSX.Element {
           return tab
         }
 
-        return updater(tab)
+        const nextTab = updater(tab)
+
+        if (nextTab === tab) {
+          return tab
+        }
+
+        return syncTabWithActivePane(nextTab)
       })
     )
   }, [])
 
+  const updatePane = useCallback(
+    (
+      tabId: string,
+      paneId: string,
+      updater: (pane: TabPaneRecord, tab: TabRecord) => TabPaneRecord
+    ): void => {
+      updateTab(tabId, (tab) => {
+        let didChange = false
+        const nextPanes = tab.panes.map((pane) => {
+          if (pane.id !== paneId) {
+            return pane
+          }
+
+          const nextPane = updater(pane, tab)
+
+          if (nextPane !== pane) {
+            didChange = true
+          }
+
+          return nextPane
+        })
+
+        return didChange
+          ? {
+              ...tab,
+              panes: nextPanes
+            }
+          : tab
+      })
+    },
+    [updateTab]
+  )
+
+  const getActivePaneIdForTab = useCallback((tabId: string | null): string | null => {
+    if (!tabId) {
+      return null
+    }
+
+    const tab = tabsRef.current.find((currentTab) => currentTab.id === tabId)
+    return tab ? (getActivePane(tab)?.id ?? null) : null
+  }, [])
+
+  const getPaneRuntime = useCallback((paneId: string | null): TerminalRuntime | null => {
+    if (!paneId) {
+      return null
+    }
+
+    return runtimesRef.current.get(paneId) ?? null
+  }, [])
+
   const getTabOutputLinesForSnapshot = useCallback((tab: TabRecord): string[] | undefined => {
-    const runtime = runtimesRef.current.get(tab.id)
+    const activePane = getActivePane(tab)
+    const runtime = activePane ? runtimesRef.current.get(activePane.id) : undefined
 
     if (runtime && !runtime.disposed) {
       return getPersistedTerminalOutputLines(runtime.terminal)
     }
 
-    return clonePersistedOutputLines(tab.outputLines)
+    return clonePersistedOutputLines(activePane?.outputLines)
   }, [])
 
   const closeSshBrowserForTab = useCallback((tabId: string | null): void => {
@@ -5386,6 +5583,10 @@ function TerminalApp(): React.JSX.Element {
 
   const closeSshBrowserCreateDialog = useCallback((): void => {
     setSshBrowserCreateDialogState(null)
+  }, [])
+
+  const closeTabContextMenu = useCallback((): void => {
+    setTabContextMenu(null)
   }, [])
 
   const closeTerminalContextMenu = useCallback((): void => {
@@ -5715,14 +5916,14 @@ function TerminalApp(): React.JSX.Element {
       return
     }
 
-    const runtime = runtimesRef.current.get(currentActiveTabId)
+    const runtime = getPaneRuntime(getActivePaneIdForTab(currentActiveTabId))
 
     if (!runtime || runtime.disposed) {
       return
     }
 
     runtime.terminal.focus()
-  }, [])
+  }, [getActivePaneIdForTab, getPaneRuntime])
 
   const refreshSearchMatches = useCallback(
     (tabId: string | null, query: string): boolean => {
@@ -5732,7 +5933,7 @@ function TerminalApp(): React.JSX.Element {
         return false
       }
 
-      const runtime = runtimesRef.current.get(tabId)
+      const runtime = getPaneRuntime(getActivePaneIdForTab(tabId))
 
       if (!runtime || runtime.disposed) {
         clearSearchSelection()
@@ -5754,7 +5955,7 @@ function TerminalApp(): React.JSX.Element {
       setSearchResultIndex(0)
       return true
     },
-    [clearSearchSelection, resetSearchResults]
+    [clearSearchSelection, getActivePaneIdForTab, getPaneRuntime, resetSearchResults]
   )
 
   const queueSearchRefresh = useCallback(
@@ -5798,6 +5999,7 @@ function TerminalApp(): React.JSX.Element {
 
   const openQuickOpen = useCallback((): void => {
     setIsSshMenuOpen(false)
+    closeTabContextMenu()
     closeTerminalContextMenu()
     closeSshBrowserContextMenu()
 
@@ -5812,7 +6014,13 @@ function TerminalApp(): React.JSX.Element {
     setQuickOpenQuery('')
     setQuickOpenSelectedIndex(0)
     setIsQuickOpenOpen(true)
-  }, [closeSshBrowserContextMenu, closeTerminalContextMenu, isQuickOpenOpen, quickOpenInputRef])
+  }, [
+    closeSshBrowserContextMenu,
+    closeTabContextMenu,
+    closeTerminalContextMenu,
+    isQuickOpenOpen,
+    quickOpenInputRef
+  ])
 
   const closeQuickOpen = useCallback(
     (shouldRestoreFocus = true): void => {
@@ -5832,8 +6040,8 @@ function TerminalApp(): React.JSX.Element {
   )
 
   const clearTerminalContent = useCallback(
-    (tabId: string): void => {
-      const runtime = runtimesRef.current.get(tabId)
+    (paneId: string): void => {
+      const runtime = getPaneRuntime(paneId)
 
       if (!runtime || runtime.disposed) {
         return
@@ -5842,11 +6050,15 @@ function TerminalApp(): React.JSX.Element {
       runtime.terminal.focus()
       runtime.terminal.clear()
 
-      if (activeTabIdRef.current === tabId && isSearchOpenRef.current) {
-        queueSearchRefresh(tabId, 0)
+      if (
+        activeTabIdRef.current !== null &&
+        getActivePaneIdForTab(activeTabIdRef.current) === paneId &&
+        isSearchOpenRef.current
+      ) {
+        queueSearchRefresh(activeTabIdRef.current, 0)
       }
     },
-    [queueSearchRefresh]
+    [getActivePaneIdForTab, getPaneRuntime, queueSearchRefresh]
   )
 
   const clearActiveTerminalContent = useCallback((): void => {
@@ -5856,8 +6068,14 @@ function TerminalApp(): React.JSX.Element {
       return
     }
 
-    clearTerminalContent(currentActiveTabId)
-  }, [clearTerminalContent])
+    const paneId = getActivePaneIdForTab(currentActiveTabId)
+
+    if (!paneId) {
+      return
+    }
+
+    clearTerminalContent(paneId)
+  }, [clearTerminalContent, getActivePaneIdForTab])
 
   const findNextMatch = useCallback((): void => {
     const activeTabId = activeTabIdRef.current
@@ -5866,7 +6084,7 @@ function TerminalApp(): React.JSX.Element {
       return
     }
 
-    const runtime = runtimesRef.current.get(activeTabId)
+    const runtime = getPaneRuntime(getActivePaneIdForTab(activeTabId))
 
     if (!runtime || runtime.disposed) {
       return
@@ -5891,7 +6109,7 @@ function TerminalApp(): React.JSX.Element {
     selectSearchMatch(runtime.terminal, matches[nextIndex])
     setSearchResultCount(matches.length)
     setSearchResultIndex(nextIndex)
-  }, [resetSearchResults])
+  }, [getActivePaneIdForTab, getPaneRuntime, resetSearchResults])
 
   const findPreviousMatch = useCallback((): void => {
     const activeTabId = activeTabIdRef.current
@@ -5900,7 +6118,7 @@ function TerminalApp(): React.JSX.Element {
       return
     }
 
-    const runtime = runtimesRef.current.get(activeTabId)
+    const runtime = getPaneRuntime(getActivePaneIdForTab(activeTabId))
 
     if (!runtime || runtime.disposed) {
       return
@@ -5927,7 +6145,7 @@ function TerminalApp(): React.JSX.Element {
     selectSearchMatch(runtime.terminal, matches[previousIndex])
     setSearchResultCount(matches.length)
     setSearchResultIndex(previousIndex)
-  }, [resetSearchResults])
+  }, [getActivePaneIdForTab, getPaneRuntime, resetSearchResults])
 
   const handleSearchQueryChange = useCallback(
     (event: React.ChangeEvent<HTMLInputElement>): void => {
@@ -5957,21 +6175,34 @@ function TerminalApp(): React.JSX.Element {
         return
       }
 
-      const runtime = runtimesRef.current.get(tabId)
-      const hostElement = hostElementsRef.current.get(tabId)
+      const tab = tabsRef.current.find((currentTab) => currentTab.id === tabId)
+      const activePaneId = tab ? (getActivePane(tab)?.id ?? null) : null
 
-      if (!runtime || runtime.disposed || !hostElement) {
+      if (!tab || !activePaneId) {
         return
       }
 
-      runtime.fitAddon.fit()
+      for (const pane of tab.panes) {
+        const runtime = runtimesRef.current.get(pane.id)
+        const hostElement = hostElementsRef.current.get(pane.id)
 
-      if (runtime.terminalId !== null && !runtime.closed) {
-        window.api.terminal.resize(runtime.terminalId, runtime.terminal.cols, runtime.terminal.rows)
-      }
+        if (!runtime || runtime.disposed || !hostElement) {
+          continue
+        }
 
-      if (shouldFocus) {
-        runtime.terminal.focus()
+        runtime.fitAddon.fit()
+
+        if (runtime.terminalId !== null && !runtime.closed) {
+          window.api.terminal.resize(
+            runtime.terminalId,
+            runtime.terminal.cols,
+            runtime.terminal.rows
+          )
+        }
+
+        if (shouldFocus && pane.id === activePaneId) {
+          runtime.terminal.focus()
+        }
       }
     })
   }, [])
@@ -6055,15 +6286,16 @@ function TerminalApp(): React.JSX.Element {
     })
   }, [])
 
-  const finalizeTabConnection = useCallback(
+  const finalizePaneConnection = useCallback(
     (
       tabId: string,
+      paneId: string,
       terminalId: number,
       title: string,
       preferredTitle?: string,
       shouldActivatePendingTab = false
     ): void => {
-      const currentRuntime = runtimesRef.current.get(tabId)
+      const currentRuntime = runtimesRef.current.get(paneId)
 
       if (!currentRuntime || currentRuntime.disposed || isUnmountingRef.current) {
         window.api.terminal.kill(terminalId)
@@ -6073,21 +6305,21 @@ function TerminalApp(): React.JSX.Element {
       currentRuntime.closed = false
       currentRuntime.terminalId = terminalId
       currentRuntime.terminal.options.disableStdin = false
-      terminalToTabRef.current.set(terminalId, tabId)
+      terminalToPaneRef.current.set(terminalId, paneId)
       const pendingTerminalState = pendingTerminalStateRef.current.get(terminalId)
       pendingTerminalStateRef.current.delete(terminalId)
 
-      updateTab(tabId, (tab) => {
+      updatePane(tabId, paneId, (pane) => {
         const nextRestoreState =
-          pendingTerminalState && tab.restoreState.kind === 'local'
+          pendingTerminalState && pane.restoreState.kind === 'local'
             ? {
                 cwd: pendingTerminalState.cwd,
                 kind: 'local' as const
               }
-            : tab.restoreState
+            : pane.restoreState
 
         return {
-          ...tab,
+          ...pane,
           errorMessage: undefined,
           exitCode: undefined,
           reconnectAttempt: undefined,
@@ -6104,22 +6336,23 @@ function TerminalApp(): React.JSX.Element {
       }
 
       if (activeTabIdRef.current === tabId) {
-        syncActiveTabLayout(tabId, true)
+        syncActiveTabLayout(tabId, getActivePaneIdForTab(tabId) === paneId)
       }
     },
-    [syncActiveTabLayout, updateTab]
+    [getActivePaneIdForTab, syncActiveTabLayout, updatePane]
   )
 
-  const failTabConnection = useCallback(
+  const failPaneConnection = useCallback(
     (
       tabId: string,
+      paneId: string,
       message: string,
       terminalMessage: string,
       shouldActivatePendingTab = false
     ): void => {
-      const currentRuntime = runtimesRef.current.get(tabId)
+      const currentRuntime = runtimesRef.current.get(paneId)
 
-      pendingInitialTabStateRef.current.delete(tabId)
+      pendingInitialPaneStateRef.current.delete(paneId)
 
       if (!currentRuntime || currentRuntime.disposed) {
         return
@@ -6130,8 +6363,8 @@ function TerminalApp(): React.JSX.Element {
       currentRuntime.terminal.options.disableStdin = true
       currentRuntime.terminal.write(`${terminalMessage}: ${message}\r\n`)
 
-      updateTab(tabId, (tab) => ({
-        ...tab,
+      updatePane(tabId, paneId, (pane) => ({
+        ...pane,
         errorMessage: message,
         exitCode: undefined,
         reconnectAttempt: undefined,
@@ -6144,15 +6377,16 @@ function TerminalApp(): React.JSX.Element {
         setActiveTabId(tabId)
       }
     },
-    [updateTab]
+    [updatePane]
   )
 
-  const reconnectSshTab = useCallback(
-    (tabId: string): void => {
+  const reconnectSshPane = useCallback(
+    (tabId: string, paneId: string): void => {
       const tab = tabsRef.current.find((currentTab) => currentTab.id === tabId)
-      const runtime = runtimesRef.current.get(tabId)
+      const pane = tab ? getPaneById(tab, paneId) : null
+      const runtime = runtimesRef.current.get(paneId)
 
-      if (!tab || tab.restoreState.kind !== 'ssh' || tab.status === 'connecting') {
+      if (!pane || pane.restoreState.kind !== 'ssh' || pane.status === 'connecting') {
         return
       }
 
@@ -6160,13 +6394,13 @@ function TerminalApp(): React.JSX.Element {
         return
       }
 
-      updateTab(tabId, (currentTab) => {
-        if (currentTab.restoreState.kind !== 'ssh' || currentTab.status === 'connecting') {
-          return currentTab
+      updatePane(tabId, paneId, (currentPane) => {
+        if (currentPane.restoreState.kind !== 'ssh' || currentPane.status === 'connecting') {
+          return currentPane
         }
 
         return {
-          ...currentTab,
+          ...currentPane,
           errorMessage: undefined,
           exitCode: undefined,
           reconnectAttempt: 1,
@@ -6181,28 +6415,29 @@ function TerminalApp(): React.JSX.Element {
       runtime.terminal.write('\r\n[reconnecting...]\r\n')
 
       void window.api.ssh
-        .connect(tab.restoreState.configId, tab.restoreState.cwd)
+        .connect(pane.restoreState.configId, pane.restoreState.cwd)
         .then(({ terminalId, title }) => {
-          finalizeTabConnection(tabId, terminalId, title)
+          finalizePaneConnection(tabId, paneId, terminalId, title)
         })
         .catch((error) => {
           const message = error instanceof Error ? error.message : String(error)
-          failTabConnection(tabId, message, 'Unable to reconnect')
+          failPaneConnection(tabId, paneId, message, 'Unable to reconnect')
         })
     },
-    [failTabConnection, finalizeTabConnection, updateTab]
+    [failPaneConnection, finalizePaneConnection, updatePane]
   )
 
-  const maybeReconnectSshTab = useCallback(
-    (tabId: string): void => {
+  const maybeReconnectSshPane = useCallback(
+    (tabId: string, paneId: string): void => {
       const tab = tabsRef.current.find((currentTab) => currentTab.id === tabId)
-      const runtime = runtimesRef.current.get(tabId)
+      const pane = tab ? getPaneById(tab, paneId) : null
+      const runtime = runtimesRef.current.get(paneId)
 
       if (
-        !tab ||
-        tab.restoreState.kind !== 'ssh' ||
-        tab.status !== 'closed' ||
-        tab.terminalId !== null ||
+        !pane ||
+        pane.restoreState.kind !== 'ssh' ||
+        pane.status !== 'closed' ||
+        pane.terminalId !== null ||
         !runtime ||
         runtime.disposed ||
         runtime.terminalId !== null
@@ -6210,9 +6445,9 @@ function TerminalApp(): React.JSX.Element {
         return
       }
 
-      reconnectSshTab(tabId)
+      reconnectSshPane(tabId, paneId)
     },
-    [reconnectSshTab]
+    [reconnectSshPane]
   )
 
   const activateTab = useCallback(
@@ -6220,24 +6455,63 @@ function TerminalApp(): React.JSX.Element {
       setActiveTabId(tabId)
 
       if (activeTabIdRef.current === tabId) {
-        maybeReconnectSshTab(tabId)
+        const paneId = getActivePaneIdForTab(tabId)
+
+        if (paneId) {
+          maybeReconnectSshPane(tabId, paneId)
+        }
       }
     },
-    [maybeReconnectSshTab]
+    [getActivePaneIdForTab, maybeReconnectSshPane]
   )
 
-  const disposeTabRuntime = useCallback((tabId: string, shouldKill: boolean): void => {
-    const runtime = runtimesRef.current.get(tabId)
+  const activatePane = useCallback(
+    (tabId: string, paneId: string, shouldFocus = true): void => {
+      setActiveTabId(tabId)
+      updateTab(tabId, (tab) =>
+        tab.activePaneId === paneId
+          ? tab
+          : {
+              ...tab,
+              activePaneId: paneId
+            }
+      )
+      maybeReconnectSshPane(tabId, paneId)
+
+      if (!shouldFocus) {
+        return
+      }
+
+      window.requestAnimationFrame(() => {
+        if (activeTabIdRef.current !== tabId) {
+          return
+        }
+
+        const runtime = runtimesRef.current.get(paneId)
+
+        if (!runtime || runtime.disposed) {
+          return
+        }
+
+        runtime.terminal.focus()
+      })
+    },
+    [maybeReconnectSshPane, updateTab]
+  )
+
+  const disposePaneRuntime = useCallback((paneId: string, shouldKill: boolean): void => {
+    const runtime = runtimesRef.current.get(paneId)
 
     if (!runtime) {
       return
     }
 
     runtime.disposed = true
+    runtime.disposeFocus.dispose()
     runtime.disposeInput.dispose()
 
     if (runtime.terminalId !== null) {
-      terminalToTabRef.current.delete(runtime.terminalId)
+      terminalToPaneRef.current.delete(runtime.terminalId)
       pendingTerminalStateRef.current.delete(runtime.terminalId)
       sshCwdSequenceBuffersRef.current.delete(runtime.terminalId)
 
@@ -6247,7 +6521,7 @@ function TerminalApp(): React.JSX.Element {
     }
 
     runtime.terminal.dispose()
-    runtimesRef.current.delete(tabId)
+    runtimesRef.current.delete(paneId)
   }, [])
 
   const createTab = useCallback(
@@ -6267,9 +6541,13 @@ function TerminalApp(): React.JSX.Element {
       )
       const terminalCreateOptions =
         options?.terminalCreateOptions ?? defaultLocalTabCreateOptions?.terminalCreateOptions
+      const primaryPane = createPaneRecord(tabId, {
+        restoreState,
+        title: nextTitle
+      })
 
       if (createTerminal || terminalCreateOptions || trimmedTitle) {
-        pendingInitialTabStateRef.current.set(tabId, {
+        pendingInitialPaneStateRef.current.set(tabId, {
           createTerminal,
           restoreState,
           terminalCreateOptions,
@@ -6277,16 +6555,7 @@ function TerminalApp(): React.JSX.Element {
         })
       }
 
-      setTabs((currentTabs) => [
-        ...currentTabs,
-        {
-          id: tabId,
-          restoreState,
-          status: 'connecting',
-          terminalId: null,
-          title: nextTitle
-        }
-      ])
+      setTabs((currentTabs) => [...currentTabs, createTabRecordFromPane(tabId, primaryPane)])
 
       if (shouldActivateImmediately) {
         pendingActivationTabIdRef.current = null
@@ -6299,12 +6568,141 @@ function TerminalApp(): React.JSX.Element {
     [defaultNewTabDirectory]
   )
 
+  const createSplitPaneForTab = useCallback(
+    (tabId: string, requestedOrientation: PaneSplitOrientation): void => {
+      if (activeTabIdRef.current !== tabId) {
+        setActiveTabId(tabId)
+      }
+
+      const tab = tabsRef.current.find((currentTab) => currentTab.id === tabId)
+      const activePane = tab ? getActivePane(tab) : null
+
+      if (!tab || !activePane || !canSplitTabPane(tab, requestedOrientation)) {
+        return
+      }
+
+      const paneId = `pane-${nextPaneIdRef.current++}`
+      const nextPaneTitle = activePane.title.trim() || defaultTabTitle
+      const nextPaneRestoreState = cloneRestorableTabState(tab.restoreState)
+      let paneCreateOptions: CreateTabOptions
+
+      if (tab.restoreState.kind === 'ssh') {
+        const sshRestoreState = tab.restoreState
+
+        paneCreateOptions = {
+          createTerminal: () =>
+            window.api.ssh.connect(sshRestoreState.configId, sshRestoreState.cwd),
+          restoreState: nextPaneRestoreState,
+          title: nextPaneTitle
+        }
+      } else {
+        paneCreateOptions = {
+          restoreState: nextPaneRestoreState,
+          terminalCreateOptions: tab.restoreState.cwd
+            ? {
+                cwd: tab.restoreState.cwd
+              }
+            : undefined,
+          title: nextPaneTitle
+        }
+      }
+
+      pendingInitialPaneStateRef.current.set(paneId, paneCreateOptions)
+
+      setTabs((currentTabs) =>
+        currentTabs.map((currentTab) => {
+          if (currentTab.id !== tabId) {
+            return currentTab
+          }
+
+          return syncTabWithActivePane({
+            ...currentTab,
+            activePaneId: paneId,
+            paneOrientation:
+              currentTab.paneOrientation ??
+              (currentTab.panes.length === 1 ? requestedOrientation : null),
+            panes: [
+              ...currentTab.panes,
+              createPaneRecord(paneId, {
+                restoreState: tab.restoreState,
+                title: nextPaneTitle
+              })
+            ]
+          })
+        })
+      )
+    },
+    []
+  )
+
+  const closePane = useCallback(
+    (tabId: string, paneId: string): void => {
+      const tab = tabsRef.current.find((currentTab) => currentTab.id === tabId)
+
+      if (!tab || tab.panes.length <= 1) {
+        return
+      }
+
+      pendingInitialPaneStateRef.current.delete(paneId)
+      disposePaneRuntime(paneId, true)
+      hostElementsRef.current.delete(paneId)
+      paneToTabRef.current.delete(paneId)
+
+      setTabs((currentTabs) =>
+        currentTabs.map((currentTab) => {
+          if (currentTab.id !== tabId) {
+            return currentTab
+          }
+
+          const nextPanes = currentTab.panes.filter((pane) => pane.id !== paneId)
+          const nextActivePaneId =
+            currentTab.activePaneId === paneId
+              ? (nextPanes[nextPanes.length - 1]?.id ?? nextPanes[0]?.id ?? currentTab.activePaneId)
+              : currentTab.activePaneId
+
+          return syncTabWithActivePane({
+            ...currentTab,
+            activePaneId: nextActivePaneId,
+            paneOrientation: nextPanes.length > 1 ? currentTab.paneOrientation : null,
+            panes: nextPanes
+          })
+        })
+      )
+
+      if (activeTabIdRef.current === tabId) {
+        window.requestAnimationFrame(() => {
+          syncActiveTabLayout(tabId, true)
+        })
+      }
+    },
+    [disposePaneRuntime, syncActiveTabLayout]
+  )
+
+  const closeActivePaneForTab = useCallback(
+    (tabId: string): void => {
+      const tab = tabsRef.current.find((currentTab) => currentTab.id === tabId)
+      const activePane = tab ? getActivePane(tab) : null
+
+      if (!tab || !activePane) {
+        return
+      }
+
+      if (activeTabIdRef.current !== tabId) {
+        setActiveTabId(tabId)
+      }
+
+      closePane(tabId, activePane.id)
+    },
+    [closePane]
+  )
+
   const closeTab = useCallback(
     (tabId: string): void => {
       const currentTabs = tabsRef.current
       const tabIndex = currentTabs.findIndex((tab) => tab.id === tabId)
+      const tab = currentTabs[tabIndex]
 
-      if (tabIndex === -1) {
+      if (!tab) {
         return
       }
 
@@ -6314,12 +6712,15 @@ function TerminalApp(): React.JSX.Element {
 
       closeSshBrowserForTab(tabId)
       removeSshBrowserWidthForTab(tabId)
-      pendingInitialTabStateRef.current.delete(tabId)
-      const remainingTabs = currentTabs.filter((tab) => tab.id !== tabId)
 
-      disposeTabRuntime(tabId, true)
-      hostElementsRef.current.delete(tabId)
+      for (const pane of tab.panes) {
+        pendingInitialPaneStateRef.current.delete(pane.id)
+        disposePaneRuntime(pane.id, true)
+        hostElementsRef.current.delete(pane.id)
+        paneToTabRef.current.delete(pane.id)
+      }
 
+      const remainingTabs = currentTabs.filter((currentTab) => currentTab.id !== tabId)
       setTabs(remainingTabs)
 
       if (activeTabIdRef.current !== tabId) {
@@ -6335,7 +6736,7 @@ function TerminalApp(): React.JSX.Element {
 
       activateTab(nextActiveTabId)
     },
-    [activateTab, closeSshBrowserForTab, disposeTabRuntime, removeSshBrowserWidthForTab]
+    [activateTab, closeSshBrowserForTab, disposePaneRuntime, removeSshBrowserWidthForTab]
   )
 
   const selectAdjacentTab = useCallback(
@@ -6365,13 +6766,15 @@ function TerminalApp(): React.JSX.Element {
     [activateTab]
   )
 
-  const initializeTab = useCallback(
-    (tab: TabRecord, hostElement: HTMLDivElement): void => {
-      const tabId = tab.id
+  const initializePane = useCallback(
+    (tabId: string, pane: TabPaneRecord, hostElement: HTMLDivElement): void => {
+      const paneId = pane.id
 
-      if (runtimesRef.current.has(tabId)) {
+      if (runtimesRef.current.has(paneId)) {
         return
       }
+
+      paneToTabRef.current.set(paneId, tabId)
 
       const terminal = new Terminal({
         ...terminalOptions,
@@ -6388,13 +6791,14 @@ function TerminalApp(): React.JSX.Element {
 
       terminal.loadAddon(fitAddon)
       terminal.open(hostElement)
-      restorePersistedTerminalOutput(terminal, tab.outputLines)
+      restorePersistedTerminalOutput(terminal, pane.outputLines)
 
       const runtime: TerminalRuntime = {
         closed: false,
         disposed: false,
+        disposeFocus: { dispose: () => undefined },
         disposeInput: terminal.onData((data) => {
-          const currentRuntime = runtimesRef.current.get(tabId)
+          const currentRuntime = runtimesRef.current.get(paneId)
 
           if (!currentRuntime || currentRuntime.closed || currentRuntime.terminalId === null) {
             return
@@ -6407,42 +6811,51 @@ function TerminalApp(): React.JSX.Element {
         terminalId: null
       }
 
-      runtimesRef.current.set(tabId, runtime)
+      runtimesRef.current.set(paneId, runtime)
 
       if (activeTabIdRef.current === tabId) {
-        syncActiveTabLayout(tabId, true)
+        syncActiveTabLayout(tabId, getActivePaneIdForTab(tabId) === paneId)
       }
 
       if (
         activeTabIdRef.current === tabId &&
         isSearchOpenRef.current &&
-        searchQueryRef.current !== ''
+        searchQueryRef.current !== '' &&
+        getActivePaneIdForTab(tabId) === paneId
       ) {
         queueSearchRefresh(tabId, 0)
       }
 
-      const pendingInitialTabState = pendingInitialTabStateRef.current.get(tabId)
+      const pendingInitialPaneState = pendingInitialPaneStateRef.current.get(paneId)
       const createTerminalRequest = Promise.resolve().then(() =>
-        pendingInitialTabState?.createTerminal
-          ? pendingInitialTabState.createTerminal()
-          : window.api.terminal.create(pendingInitialTabState?.terminalCreateOptions)
+        pendingInitialPaneState?.createTerminal
+          ? pendingInitialPaneState.createTerminal()
+          : window.api.terminal.create(pendingInitialPaneState?.terminalCreateOptions)
       )
 
       createTerminalRequest
         .then(({ terminalId, title }) => {
-          pendingInitialTabStateRef.current.delete(tabId)
-          finalizeTabConnection(tabId, terminalId, title, pendingInitialTabState?.title, true)
+          pendingInitialPaneStateRef.current.delete(paneId)
+          finalizePaneConnection(
+            tabId,
+            paneId,
+            terminalId,
+            title,
+            pendingInitialPaneState?.title,
+            paneId === tabId
+          )
         })
         .catch((error) => {
           const message = error instanceof Error ? error.message : String(error)
 
-          failTabConnection(tabId, message, 'Unable to start shell', true)
+          failPaneConnection(tabId, paneId, message, 'Unable to start shell', paneId === tabId)
         })
     },
     [
-      failTabConnection,
-      finalizeTabConnection,
+      failPaneConnection,
+      finalizePaneConnection,
       getTerminalThemeForSearchState,
+      getActivePaneIdForTab,
       queueSearchRefresh,
       selectedTerminalCursorBlink,
       selectedTerminalCursorStyle,
@@ -6467,6 +6880,13 @@ function TerminalApp(): React.JSX.Element {
 
   useEffect(() => {
     tabsRef.current = tabs
+    paneToTabRef.current.clear()
+
+    for (const tab of tabs) {
+      for (const pane of tab.panes) {
+        paneToTabRef.current.set(pane.id, tab.id)
+      }
+    }
 
     if (tabs.length > 0) {
       emptyStateCreateQueuedRef.current = false
@@ -6590,8 +7010,14 @@ function TerminalApp(): React.JSX.Element {
       return
     }
 
-    maybeReconnectSshTab(activeTabId)
-  }, [activeTabId, maybeReconnectSshTab])
+    const paneId = getActivePaneIdForTab(activeTabId)
+
+    if (!paneId) {
+      return
+    }
+
+    maybeReconnectSshPane(activeTabId, paneId)
+  }, [activeTabId, getActivePaneIdForTab, maybeReconnectSshPane])
 
   useEffect(() => {
     const reconnectActiveSshTab = (): void => {
@@ -6601,7 +7027,13 @@ function TerminalApp(): React.JSX.Element {
         return
       }
 
-      maybeReconnectSshTab(currentActiveTabId)
+      const paneId = getActivePaneIdForTab(currentActiveTabId)
+
+      if (!paneId) {
+        return
+      }
+
+      maybeReconnectSshPane(currentActiveTabId, paneId)
     }
 
     const handleVisibilityChange = (): void => {
@@ -6619,7 +7051,7 @@ function TerminalApp(): React.JSX.Element {
       window.removeEventListener('focus', reconnectActiveSshTab)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
-  }, [maybeReconnectSshTab])
+  }, [getActivePaneIdForTab, maybeReconnectSshPane])
 
   useEffect(() => {
     isSearchOpenRef.current = isSearchOpen
@@ -6662,10 +7094,10 @@ function TerminalApp(): React.JSX.Element {
           return
         }
 
-        const pendingInitialTabState = pendingInitialTabStateRef.current
+        const pendingInitialPaneState = pendingInitialPaneStateRef.current
 
         for (const tab of snapshot.tabs) {
-          pendingInitialTabState.set(tab.id, buildCreateTabOptionsFromSessionTab(tab))
+          pendingInitialPaneState.set(tab.id, buildCreateTabOptionsFromSessionTab(tab))
         }
 
         nextTabIdRef.current = getNextTabSequence(snapshot.tabs)
@@ -6772,15 +7204,16 @@ function TerminalApp(): React.JSX.Element {
 
   useEffect(() => {
     const disposeData = window.api.terminal.onData((event) => {
-      const tabId = terminalToTabRef.current.get(event.terminalId)
+      const paneId = terminalToPaneRef.current.get(event.terminalId)
 
-      if (!tabId) {
+      if (!paneId) {
         return
       }
 
-      const runtime = runtimesRef.current.get(tabId)
+      const runtime = runtimesRef.current.get(paneId)
+      const tabId = paneToTabRef.current.get(paneId)
 
-      if (!runtime || runtime.disposed) {
+      if (!runtime || runtime.disposed || !tabId) {
         return
       }
 
@@ -6801,30 +7234,30 @@ function TerminalApp(): React.JSX.Element {
       }
 
       if (cwd) {
-        updateTab(tabId, (tab) => {
-          if (tab.restoreState.kind !== 'ssh') {
-            return typeof tab.reconnectAttempt === 'number'
+        updatePane(tabId, paneId, (pane) => {
+          if (pane.restoreState.kind !== 'ssh') {
+            return typeof pane.reconnectAttempt === 'number'
               ? {
-                  ...tab,
+                  ...pane,
                   reconnectAttempt: undefined
                 }
-              : tab
+              : pane
           }
 
           const nextRestoreState =
-            tab.restoreState.cwd === cwd
-              ? tab.restoreState
+            pane.restoreState.cwd === cwd
+              ? pane.restoreState
               : {
-                  ...tab.restoreState,
+                  ...pane.restoreState,
                   cwd
                 }
 
-          if (nextRestoreState === tab.restoreState && tab.reconnectAttempt === undefined) {
-            return tab
+          if (nextRestoreState === pane.restoreState && pane.reconnectAttempt === undefined) {
+            return pane
           }
 
           return {
-            ...tab,
+            ...pane,
             reconnectAttempt: undefined,
             restoreState: nextRestoreState
           }
@@ -6834,31 +7267,34 @@ function TerminalApp(): React.JSX.Element {
       if (
         isSearchOpenRef.current &&
         searchQueryRef.current !== '' &&
-        activeTabIdRef.current === tabId
+        activeTabIdRef.current === tabId &&
+        getActivePaneIdForTab(tabId) === paneId
       ) {
         queueSearchRefresh(tabId, searchRefreshDebounceMs)
       }
     })
 
     const disposeExit = window.api.terminal.onExit((event) => {
-      const tabId = terminalToTabRef.current.get(event.terminalId)
+      const paneId = terminalToPaneRef.current.get(event.terminalId)
 
-      if (!tabId) {
+      if (!paneId) {
         return
       }
 
-      const runtime = runtimesRef.current.get(tabId)
+      const runtime = runtimesRef.current.get(paneId)
+      const tabId = paneToTabRef.current.get(paneId)
 
-      terminalToTabRef.current.delete(event.terminalId)
+      terminalToPaneRef.current.delete(event.terminalId)
       pendingTerminalStateRef.current.delete(event.terminalId)
       sshCwdSequenceBuffersRef.current.delete(event.terminalId)
 
-      if (!runtime || runtime.disposed) {
+      if (!runtime || runtime.disposed || !tabId) {
         return
       }
 
       const shouldReconnectActiveSshTab =
         tabId === activeTabIdRef.current &&
+        getActivePaneIdForTab(tabId) === paneId &&
         document.visibilityState === 'visible' &&
         document.hasFocus() &&
         (event.exitCode !== 0 || typeof event.signal === 'number')
@@ -6868,8 +7304,8 @@ function TerminalApp(): React.JSX.Element {
       runtime.terminal.options.disableStdin = true
       runtime.terminal.write(`\r\n[process exited with code ${event.exitCode}]\r\n`)
 
-      updateTab(tabId, (tab) => ({
-        ...tab,
+      updatePane(tabId, paneId, (pane) => ({
+        ...pane,
         exitCode: event.exitCode,
         reconnectAttempt: undefined,
         status: 'closed',
@@ -6877,7 +7313,7 @@ function TerminalApp(): React.JSX.Element {
       }))
 
       if (shouldReconnectActiveSshTab) {
-        reconnectSshTab(tabId)
+        reconnectSshPane(tabId, paneId)
       }
     })
 
@@ -6885,13 +7321,13 @@ function TerminalApp(): React.JSX.Element {
       disposeData()
       disposeExit()
     }
-  }, [queueSearchRefresh, reconnectSshTab, updateTab])
+  }, [getActivePaneIdForTab, queueSearchRefresh, reconnectSshPane, updatePane])
 
   useEffect(() => {
     const disposeCwd = window.api.terminal.onCwd((event) => {
-      const tabId = terminalToTabRef.current.get(event.terminalId)
+      const paneId = terminalToPaneRef.current.get(event.terminalId)
 
-      if (!tabId) {
+      if (!paneId) {
         pendingTerminalStateRef.current.set(event.terminalId, {
           cwd: event.cwd,
           title: event.title
@@ -6899,21 +7335,27 @@ function TerminalApp(): React.JSX.Element {
         return
       }
 
-      updateTab(tabId, (tab) => {
+      const tabId = paneToTabRef.current.get(paneId)
+
+      if (!tabId) {
+        return
+      }
+
+      updatePane(tabId, paneId, (pane) => {
         const nextRestoreState =
-          tab.restoreState.kind === 'local' && tab.restoreState.cwd !== event.cwd
+          pane.restoreState.kind === 'local' && pane.restoreState.cwd !== event.cwd
             ? {
                 cwd: event.cwd,
                 kind: 'local' as const
               }
-            : tab.restoreState
+            : pane.restoreState
 
-        if (tab.title === event.title && nextRestoreState === tab.restoreState) {
-          return tab
+        if (pane.title === event.title && nextRestoreState === pane.restoreState) {
+          return pane
         }
 
         return {
-          ...tab,
+          ...pane,
           restoreState: nextRestoreState,
           title: event.title
         }
@@ -6923,7 +7365,7 @@ function TerminalApp(): React.JSX.Element {
     return () => {
       disposeCwd()
     }
-  }, [updateTab])
+  }, [updatePane])
 
   useEffect(() => {
     const disposeFindRequested = window.api.terminal.onFindRequested(() => {
@@ -7087,11 +7529,17 @@ function TerminalApp(): React.JSX.Element {
       return
     }
 
+    const currentActivePaneId = activeTabId ? getActivePaneIdForTab(activeTabId) : null
+
+    if (!activeTabId || !currentActivePaneId) {
+      return
+    }
+
     window.requestAnimationFrame(() => {
       searchInputRef.current?.focus()
       searchInputRef.current?.select()
     })
-  }, [activeTabId, isSearchOpen])
+  }, [activeTabId, getActivePaneIdForTab, isSearchOpen])
 
   useEffect(() => {
     if (!isSearchOpen) {
@@ -7102,13 +7550,25 @@ function TerminalApp(): React.JSX.Element {
       return
     }
 
+    const currentActivePaneId = activeTabId ? getActivePaneIdForTab(activeTabId) : null
+
+    if (!currentActivePaneId) {
+      return
+    }
+
     queueSearchRefresh(activeTabId, 0)
-  }, [activeTabId, isSearchOpen, queueSearchRefresh, searchQuery])
+  }, [activeTabId, getActivePaneIdForTab, isSearchOpen, queueSearchRefresh, searchQuery])
 
   useEffect(() => {
+    const currentActivePaneId = activeTabId ? getActivePaneIdForTab(activeTabId) : null
+
+    if (activeTabId && !currentActivePaneId) {
+      return
+    }
+
     syncActiveTabLayout(activeTabId, true)
     syncTabStripPosition(activeTabId)
-  }, [activeTabId, syncActiveTabLayout, syncTabStripPosition, tabs.length])
+  }, [activeTabId, getActivePaneIdForTab, syncActiveTabLayout, syncTabStripPosition, tabs.length])
 
   useEffect(() => {
     const activeSshBrowserState = activeTabId ? (sshBrowserStates[activeTabId] ?? null) : null
@@ -7119,6 +7579,11 @@ function TerminalApp(): React.JSX.Element {
 
     const handleKeyDown = (event: KeyboardEvent): void => {
       if (event.key !== 'Escape') {
+        return
+      }
+
+      if (tabContextMenu) {
+        closeTabContextMenu()
         return
       }
 
@@ -7142,13 +7607,58 @@ function TerminalApp(): React.JSX.Element {
     }
   }, [
     activeTabId,
+    closeTabContextMenu,
     closeTerminalContextMenu,
     closeSshBrowserContextMenu,
     closeSshBrowserForTab,
     sshBrowserContextMenu,
     sshBrowserStates,
+    tabContextMenu,
     terminalContextMenu
   ])
+
+  useEffect(() => {
+    if (!tabContextMenu) {
+      return
+    }
+
+    const handlePointerDown = (event: PointerEvent): void => {
+      if (tabContextMenuRef.current?.contains(event.target as Node)) {
+        return
+      }
+
+      closeTabContextMenu()
+    }
+
+    const handleKeyDown = (event: KeyboardEvent): void => {
+      if (event.key !== 'Escape') {
+        return
+      }
+
+      closeTabContextMenu()
+    }
+
+    window.addEventListener('pointerdown', handlePointerDown, { capture: true })
+    window.addEventListener('keydown', handleKeyDown, { capture: true })
+
+    return () => {
+      window.removeEventListener('pointerdown', handlePointerDown, { capture: true })
+      window.removeEventListener('keydown', handleKeyDown, { capture: true })
+    }
+  }, [closeTabContextMenu, tabContextMenu])
+
+  useEffect(() => {
+    if (!tabContextMenu) {
+      return
+    }
+
+    if (
+      activeTabId !== tabContextMenu.tabId ||
+      !tabs.some((tab) => tab.id === tabContextMenu.tabId)
+    ) {
+      closeTabContextMenu()
+    }
+  }, [activeTabId, closeTabContextMenu, tabContextMenu, tabs])
 
   useEffect(() => {
     if (!terminalContextMenu) {
@@ -7187,7 +7697,7 @@ function TerminalApp(): React.JSX.Element {
 
     if (
       activeTabId !== terminalContextMenu.tabId ||
-      !runtimesRef.current.has(terminalContextMenu.tabId)
+      !runtimesRef.current.has(terminalContextMenu.paneId)
     ) {
       closeTerminalContextMenu()
     }
@@ -7282,20 +7792,20 @@ function TerminalApp(): React.JSX.Element {
   useEffect(() => {
     const hostElements = hostElementsRef.current
     const runtimes = runtimesRef.current
-    const pendingInitialTabState = pendingInitialTabStateRef.current
+    const pendingInitialPaneState = pendingInitialPaneStateRef.current
 
     return () => {
       isUnmountingRef.current = true
       cancelQueuedSearchRefresh()
 
-      for (const tabId of Array.from(runtimes.keys())) {
-        disposeTabRuntime(tabId, true)
+      for (const paneId of Array.from(runtimes.keys())) {
+        disposePaneRuntime(paneId, true)
       }
 
-      pendingInitialTabState.clear()
+      pendingInitialPaneState.clear()
       hostElements.clear()
     }
-  }, [cancelQueuedSearchRefresh, disposeTabRuntime])
+  }, [cancelQueuedSearchRefresh, disposePaneRuntime])
 
   const handleTabStripWheel = useCallback((event: React.WheelEvent<HTMLDivElement>): void => {
     const tabStrip = tabStripRef.current
@@ -7315,38 +7825,44 @@ function TerminalApp(): React.JSX.Element {
     tabStrip.scrollBy({ left: dominantDelta })
   }, [])
 
-  const writeDroppedPathsToActiveTerminal = useCallback((paths: string[]): void => {
-    if (paths.length === 0) {
-      return
-    }
+  const writeDroppedPathsToActiveTerminal = useCallback(
+    (paths: string[]): void => {
+      if (paths.length === 0) {
+        return
+      }
 
-    const activeTabId = activeTabIdRef.current
+      const activeTabId = activeTabIdRef.current
 
-    if (!activeTabId) {
-      return
-    }
+      if (!activeTabId) {
+        return
+      }
 
-    const runtime = runtimesRef.current.get(activeTabId)
+      const runtime = getPaneRuntime(getActivePaneIdForTab(activeTabId))
 
-    if (!runtime || runtime.closed || runtime.disposed || runtime.terminalId === null) {
-      return
-    }
+      if (!runtime || runtime.closed || runtime.disposed || runtime.terminalId === null) {
+        return
+      }
 
-    const escapedPaths = paths.map((path) => quotePathForShell(path))
-    window.api.terminal.write(runtime.terminalId, `${escapedPaths.join(' ')} `)
-    runtime.terminal.focus()
-  }, [])
+      const escapedPaths = paths.map((path) => quotePathForShell(path))
+      window.api.terminal.write(runtime.terminalId, `${escapedPaths.join(' ')} `)
+      runtime.terminal.focus()
+    },
+    [getActivePaneIdForTab, getPaneRuntime]
+  )
 
-  const writeTerminalStatusToTab = useCallback((tabId: string, message: string): void => {
-    const runtime = runtimesRef.current.get(tabId)
+  const writeTerminalStatusToTab = useCallback(
+    (tabId: string, message: string): void => {
+      const runtime = getPaneRuntime(getActivePaneIdForTab(tabId))
 
-    if (!runtime || runtime.closed || runtime.disposed) {
-      return
-    }
+      if (!runtime || runtime.closed || runtime.disposed) {
+        return
+      }
 
-    runtime.terminal.write(`\r\n${message}\r\n`)
-    runtime.terminal.focus()
-  }, [])
+      runtime.terminal.write(`\r\n${message}\r\n`)
+      runtime.terminal.focus()
+    },
+    [getActivePaneIdForTab, getPaneRuntime]
+  )
 
   const uploadLocalPathsToSshTarget = useCallback(
     (tabId: string, configId: string, targetPath: string, paths: string[]): void => {
@@ -7554,28 +8070,36 @@ function TerminalApp(): React.JSX.Element {
     [createTab]
   )
 
-  const runQuickCommand = useCallback((quickCommand: QuickCommand): void => {
-    const currentActiveTabId = activeTabIdRef.current
+  const runQuickCommand = useCallback(
+    (quickCommand: QuickCommand): void => {
+      const currentActiveTabId = activeTabIdRef.current
 
-    if (!currentActiveTabId) {
-      return
-    }
+      if (!currentActiveTabId) {
+        return
+      }
 
-    const runtime = runtimesRef.current.get(currentActiveTabId)
+      const runtime = getPaneRuntime(getActivePaneIdForTab(currentActiveTabId))
 
-    if (!runtime || runtime.closed || runtime.disposed || runtime.terminalId === null) {
-      return
-    }
+      if (!runtime || runtime.closed || runtime.disposed || runtime.terminalId === null) {
+        return
+      }
 
-    window.api.terminal.write(
-      runtime.terminalId,
-      getQuickCommandTerminalInput(quickCommand.command)
-    )
-    runtime.terminal.focus()
-  }, [])
+      window.api.terminal.write(
+        runtime.terminalId,
+        getQuickCommandTerminalInput(quickCommand.command)
+      )
+      runtime.terminal.focus()
+    },
+    [getActivePaneIdForTab, getPaneRuntime]
+  )
 
   const activeTab = tabs.find((tab) => tab.id === activeTabId) ?? null
-  const canRunQuickCommands = activeTab?.status === 'ready' && activeTab.terminalId !== null
+  const activePane = activeTab ? getActivePane(activeTab) : null
+  const activePaneId = activePane?.id ?? null
+  const canRunQuickCommands = activePane?.status === 'ready' && activePane.terminalId !== null
+  const canSplitActivePaneIntoColumns = activeTab ? canSplitTabPane(activeTab, 'columns') : false
+  const canSplitActivePaneIntoRows = activeTab ? canSplitTabPane(activeTab, 'rows') : false
+  const canCloseActivePane = activeTab ? canCloseTabPane(activeTab) : false
   const activeLocalTabCwd =
     activeTab?.restoreState.kind === 'local' ? (activeTab.restoreState.cwd ?? null) : null
   const activeSshConfigId =
@@ -7602,9 +8126,23 @@ function TerminalApp(): React.JSX.Element {
   const terminalContextMenuTab = terminalContextMenu
     ? (tabs.find((tab) => tab.id === terminalContextMenu.tabId) ?? null)
     : null
+  const terminalContextMenuPane =
+    terminalContextMenu && terminalContextMenuTab
+      ? getPaneById(terminalContextMenuTab, terminalContextMenu.paneId)
+      : null
+  const tabContextMenuTab = tabContextMenu
+    ? (tabs.find((tab) => tab.id === tabContextMenu.tabId) ?? null)
+    : null
+  const canSplitTabContextIntoColumns = tabContextMenuTab
+    ? canSplitTabPane(tabContextMenuTab, 'columns')
+    : false
+  const canSplitTabContextIntoRows = tabContextMenuTab
+    ? canSplitTabPane(tabContextMenuTab, 'rows')
+    : false
+  const canCloseTabContextPane = tabContextMenuTab ? canCloseTabPane(tabContextMenuTab) : false
   const terminalContextMenuLocalEditPath =
-    terminalContextMenuTab?.restoreState.kind === 'local' && terminalContextMenu
-      ? getTerminalQuickLocalEditPath(terminalContextMenuTab, terminalContextMenu.selectionText)
+    terminalContextMenuPane?.restoreState.kind === 'local' && terminalContextMenu
+      ? getTerminalQuickLocalEditPath(terminalContextMenuPane, terminalContextMenu.selectionText)
       : null
   const canEditTerminalContextSelection =
     terminalContextMenu?.quickDownloadAction !== null || terminalContextMenuLocalEditPath !== null
@@ -7666,15 +8204,66 @@ function TerminalApp(): React.JSX.Element {
       title: 'New Tab'
     },
     {
+      action: () => {
+        if (!activeTabId) {
+          return
+        }
+
+        createSplitPaneForTab(activeTabId, 'columns')
+      },
+      description: 'Split the active tab into side-by-side panes.',
+      disabled: !canSplitActivePaneIntoColumns,
+      group: 'commands',
+      icon: Columns2,
+      id: 'split-right',
+      keywords: ['split', 'pane', 'vertical split', 'side by side', 'columns'],
+      shortcut: [],
+      title: 'Split Right'
+    },
+    {
+      action: () => {
+        if (!activeTabId) {
+          return
+        }
+
+        createSplitPaneForTab(activeTabId, 'rows')
+      },
+      description: 'Split the active tab into stacked panes.',
+      disabled: !canSplitActivePaneIntoRows,
+      group: 'commands',
+      icon: Rows2,
+      id: 'split-down',
+      keywords: ['split', 'pane', 'horizontal split', 'stacked', 'rows'],
+      shortcut: [],
+      title: 'Split Down'
+    },
+    {
       action: clearActiveTerminalContent,
-      description: 'Clear the visible terminal output in the current tab.',
-      disabled: activeTabId === null,
+      description: 'Clear the visible terminal output in the active pane.',
+      disabled: activePaneId === null,
       group: 'commands',
       icon: BrushCleaning,
       id: 'clean',
       keywords: ['clean', 'clear', 'erase', 'terminal'],
       shortcut: [],
       title: 'Clean'
+    },
+    {
+      action: () => {
+        if (!activeTabId) {
+          return
+        }
+
+        closeActivePaneForTab(activeTabId)
+      },
+      description: 'Close the active pane without closing the tab.',
+      disabled: !canCloseActivePane,
+      group: 'commands',
+      icon: X,
+      id: 'close-pane',
+      keywords: ['close pane', 'remove pane', 'pane'],
+      shortcut: [],
+      title: 'Close Pane'
     },
     {
       action: () => {
@@ -8042,6 +8631,7 @@ function TerminalApp(): React.JSX.Element {
 
       event.preventDefault()
       event.stopPropagation()
+      closeTabContextMenu()
 
       const menuPadding = 12
       const menuWidth = 184
@@ -8057,12 +8647,42 @@ function TerminalApp(): React.JSX.Element {
         y: Math.min(Math.max(event.clientY, menuPadding), maxY)
       })
     },
-    []
+    [closeTabContextMenu]
+  )
+
+  const handleOpenTabContextMenu = useCallback(
+    (event: React.MouseEvent<HTMLButtonElement>, tabId: string): void => {
+      const tab = tabsRef.current.find((currentTab) => currentTab.id === tabId)
+
+      if (!tab) {
+        return
+      }
+
+      event.preventDefault()
+      event.stopPropagation()
+
+      const menuPadding = 12
+      const menuWidth = 220
+      const menuHeight = 192
+      const maxX = Math.max(menuPadding, window.innerWidth - menuWidth - menuPadding)
+      const maxY = Math.max(menuPadding, window.innerHeight - menuHeight - menuPadding)
+
+      setIsSshMenuOpen(false)
+      closeTerminalContextMenu()
+      closeSshBrowserContextMenu()
+      activateTab(tabId)
+      setTabContextMenu({
+        tabId,
+        x: Math.min(Math.max(event.clientX, menuPadding), maxX),
+        y: Math.min(Math.max(event.clientY, menuPadding), maxY)
+      })
+    },
+    [activateTab, closeSshBrowserContextMenu, closeTerminalContextMenu]
   )
 
   const handleOpenTerminalContextMenu = useCallback(
-    (event: React.MouseEvent<HTMLDivElement>, tabId: string): void => {
-      const runtime = runtimesRef.current.get(tabId)
+    (event: React.MouseEvent<HTMLDivElement>, tabId: string, paneId: string): void => {
+      const runtime = getPaneRuntime(paneId)
 
       if (!runtime || runtime.disposed) {
         return
@@ -8070,14 +8690,16 @@ function TerminalApp(): React.JSX.Element {
 
       event.preventDefault()
       event.stopPropagation()
+      closeTabContextMenu()
 
       const selectionText = runtime.terminal.getSelection()
       const tab = tabsRef.current.find((currentTab) => currentTab.id === tabId)
-      const quickDownloadAction = tab ? getTerminalQuickDownloadAction(tab, selectionText) : null
-      const quickLocalEditPath = tab ? getTerminalQuickLocalEditPath(tab, selectionText) : null
-      const quickExtractAction = tab ? getTerminalQuickExtractAction(tab, selectionText) : null
+      const pane = tab ? getPaneById(tab, paneId) : null
+      const quickDownloadAction = pane ? getTerminalQuickDownloadAction(pane, selectionText) : null
+      const quickLocalEditPath = pane ? getTerminalQuickLocalEditPath(pane, selectionText) : null
+      const quickExtractAction = pane ? getTerminalQuickExtractAction(pane, selectionText) : null
       const hasQuickEditAction =
-        tab?.restoreState.kind === 'ssh'
+        pane?.restoreState.kind === 'ssh'
           ? quickDownloadAction !== null
           : quickLocalEditPath !== null
       const quickActionCount =
@@ -8091,7 +8713,9 @@ function TerminalApp(): React.JSX.Element {
       const maxX = Math.max(menuPadding, window.innerWidth - menuWidth - menuPadding)
       const maxY = Math.max(menuPadding, window.innerHeight - menuHeight - menuPadding)
 
+      activatePane(tabId, paneId, false)
       setTerminalContextMenu({
+        paneId,
         quickDownloadAction,
         quickExtractAction,
         selectionText,
@@ -8100,8 +8724,44 @@ function TerminalApp(): React.JSX.Element {
         y: Math.min(Math.max(event.clientY, menuPadding), maxY)
       })
     },
-    []
+    [activatePane, closeTabContextMenu, getPaneRuntime]
   )
+
+  const handleSplitTabFromContextMenu = useCallback(
+    (requestedOrientation: PaneSplitOrientation): void => {
+      const currentMenu = tabContextMenu
+
+      if (!currentMenu) {
+        return
+      }
+
+      createSplitPaneForTab(currentMenu.tabId, requestedOrientation)
+      closeTabContextMenu()
+    },
+    [closeTabContextMenu, createSplitPaneForTab, tabContextMenu]
+  )
+
+  const handleClosePaneFromTabContextMenu = useCallback((): void => {
+    const currentMenu = tabContextMenu
+
+    if (!currentMenu) {
+      return
+    }
+
+    closeActivePaneForTab(currentMenu.tabId)
+    closeTabContextMenu()
+  }, [closeActivePaneForTab, closeTabContextMenu, tabContextMenu])
+
+  const handleCloseTabFromContextMenu = useCallback((): void => {
+    const currentMenu = tabContextMenu
+
+    if (!currentMenu) {
+      return
+    }
+
+    closeTabContextMenu()
+    closeTab(currentMenu.tabId)
+  }, [closeTab, closeTabContextMenu, tabContextMenu])
 
   const openTextEditorFile = useCallback(
     (
@@ -8208,7 +8868,7 @@ function TerminalApp(): React.JSX.Element {
       return
     }
 
-    const runtime = runtimesRef.current.get(currentMenu.tabId)
+    const runtime = getPaneRuntime(currentMenu.paneId)
 
     if (!runtime || runtime.disposed || !runtime.terminal.hasSelection()) {
       closeTerminalContextMenu()
@@ -8218,7 +8878,7 @@ function TerminalApp(): React.JSX.Element {
     window.api.clipboard.writeText(runtime.terminal.getSelection())
     runtime.terminal.focus()
     closeTerminalContextMenu()
-  }, [closeTerminalContextMenu, terminalContextMenu])
+  }, [closeTerminalContextMenu, getPaneRuntime, terminalContextMenu])
 
   const handleSearchTerminalSelectionWithGoogle = useCallback((): void => {
     const currentMenu = terminalContextMenu
@@ -8227,7 +8887,7 @@ function TerminalApp(): React.JSX.Element {
       return
     }
 
-    const runtime = runtimesRef.current.get(currentMenu.tabId)
+    const runtime = getPaneRuntime(currentMenu.paneId)
     const selectionText = currentMenu.selectionText.trim()
 
     if (!runtime || runtime.disposed || selectionText === '') {
@@ -8242,7 +8902,7 @@ function TerminalApp(): React.JSX.Element {
         console.error('Unable to open Google search.', error)
       })
     closeTerminalContextMenu()
-  }, [closeTerminalContextMenu, terminalContextMenu])
+  }, [closeTerminalContextMenu, getPaneRuntime, terminalContextMenu])
 
   const handleEditTerminalSelection = useCallback((): void => {
     const currentMenu = terminalContextMenu
@@ -8252,10 +8912,11 @@ function TerminalApp(): React.JSX.Element {
       return
     }
 
-    const runtime = runtimesRef.current.get(currentMenu.tabId)
+    const runtime = getPaneRuntime(currentMenu.paneId)
     const tab = tabsRef.current.find((currentTab) => currentTab.id === currentMenu.tabId)
+    const pane = tab ? getPaneById(tab, currentMenu.paneId) : null
 
-    if (!runtime || runtime.disposed || !tab) {
+    if (!runtime || runtime.disposed || !tab || !pane) {
       closeTerminalContextMenu()
       return
     }
@@ -8278,7 +8939,7 @@ function TerminalApp(): React.JSX.Element {
       return
     }
 
-    const localPath = getTerminalQuickLocalEditPath(tab, currentMenu.selectionText)
+    const localPath = getTerminalQuickLocalEditPath(pane, currentMenu.selectionText)
 
     if (!localPath) {
       closeTerminalContextMenu()
@@ -8296,7 +8957,7 @@ function TerminalApp(): React.JSX.Element {
     }
 
     closeTerminalContextMenu()
-  }, [closeTerminalContextMenu, openTextEditorFile, terminalContextMenu])
+  }, [closeTerminalContextMenu, getPaneRuntime, openTextEditorFile, terminalContextMenu])
 
   const handleDownloadTerminalSelection = useCallback((): void => {
     const currentMenu = terminalContextMenu
@@ -8306,7 +8967,7 @@ function TerminalApp(): React.JSX.Element {
       return
     }
 
-    const runtime = runtimesRef.current.get(currentMenu.tabId)
+    const runtime = getPaneRuntime(currentMenu.paneId)
 
     if (!runtime || runtime.disposed) {
       closeTerminalContextMenu()
@@ -8321,7 +8982,7 @@ function TerminalApp(): React.JSX.Element {
     })
 
     closeTerminalContextMenu()
-  }, [closeTerminalContextMenu, terminalContextMenu])
+  }, [closeTerminalContextMenu, getPaneRuntime, terminalContextMenu])
 
   const handleExtractTerminalSelection = useCallback((): void => {
     const currentMenu = terminalContextMenu
@@ -8331,7 +8992,7 @@ function TerminalApp(): React.JSX.Element {
       return
     }
 
-    const runtime = runtimesRef.current.get(currentMenu.tabId)
+    const runtime = getPaneRuntime(currentMenu.paneId)
 
     if (!runtime || runtime.closed || runtime.disposed || runtime.terminalId === null) {
       closeTerminalContextMenu()
@@ -8342,7 +9003,7 @@ function TerminalApp(): React.JSX.Element {
     runtime.terminal.focus()
     runtime.terminal.input(`${currentMenu.quickExtractAction.command}\r`)
     closeTerminalContextMenu()
-  }, [closeTerminalContextMenu, terminalContextMenu])
+  }, [closeTerminalContextMenu, getPaneRuntime, terminalContextMenu])
 
   const handlePasteIntoTerminal = useCallback((): void => {
     const currentMenu = terminalContextMenu
@@ -8351,7 +9012,7 @@ function TerminalApp(): React.JSX.Element {
       return
     }
 
-    const runtime = runtimesRef.current.get(currentMenu.tabId)
+    const runtime = getPaneRuntime(currentMenu.paneId)
 
     if (!runtime || runtime.disposed) {
       closeTerminalContextMenu()
@@ -8361,7 +9022,7 @@ function TerminalApp(): React.JSX.Element {
     runtime.terminal.focus()
     runtime.terminal.paste(window.api.clipboard.readText())
     closeTerminalContextMenu()
-  }, [closeTerminalContextMenu, terminalContextMenu])
+  }, [closeTerminalContextMenu, getPaneRuntime, terminalContextMenu])
 
   const handleSelectAllTerminalContent = useCallback((): void => {
     const currentMenu = terminalContextMenu
@@ -8370,7 +9031,7 @@ function TerminalApp(): React.JSX.Element {
       return
     }
 
-    const runtime = runtimesRef.current.get(currentMenu.tabId)
+    const runtime = getPaneRuntime(currentMenu.paneId)
 
     if (!runtime || runtime.disposed) {
       closeTerminalContextMenu()
@@ -8380,7 +9041,7 @@ function TerminalApp(): React.JSX.Element {
     runtime.terminal.focus()
     runtime.terminal.selectAll()
     closeTerminalContextMenu()
-  }, [closeTerminalContextMenu, terminalContextMenu])
+  }, [closeTerminalContextMenu, getPaneRuntime, terminalContextMenu])
 
   const handleClearTerminalContent = useCallback((): void => {
     const currentMenu = terminalContextMenu
@@ -8389,7 +9050,7 @@ function TerminalApp(): React.JSX.Element {
       return
     }
 
-    clearTerminalContent(currentMenu.tabId)
+    clearTerminalContent(currentMenu.paneId)
     closeTerminalContextMenu()
   }, [clearTerminalContent, closeTerminalContextMenu, terminalContextMenu])
 
@@ -8860,6 +9521,7 @@ function TerminalApp(): React.JSX.Element {
                   isActive={isActive}
                   key={tab.id}
                   onActivateTab={activateTab}
+                  onOpenContextMenu={handleOpenTabContextMenu}
                   sshServerIcon={sshServerIcon}
                   tab={tab}
                 />
@@ -9111,20 +9773,137 @@ function TerminalApp(): React.JSX.Element {
               className={`terminal-screen${tab.id === activeTabId ? ' is-active' : ''}`}
               id={`panel-${tab.id}`}
               key={tab.id}
-              onContextMenu={(event) => handleOpenTerminalContextMenu(event, tab.id)}
-              ref={(node) => {
-                if (!node) {
-                  hostElementsRef.current.delete(tab.id)
-                  return
-                }
-
-                hostElementsRef.current.set(tab.id, node)
-                initializeTab(tab, node)
-              }}
               role="tabpanel"
-            />
+            >
+              <div
+                className={`terminal-pane-grid${
+                  tab.paneOrientation ? ` is-${tab.paneOrientation}` : ' is-single'
+                }`}
+                data-pane-count={tab.panes.length}
+                style={
+                  {
+                    '--pane-count': String(tab.panes.length)
+                  } as CSSProperties
+                }
+              >
+                {tab.panes.map((pane) => {
+                  const isActivePane = tab.activePaneId === pane.id
+                  const paneStatusLabel = getTerminalItemStatusLabel(pane)
+                  const paneMeta =
+                    paneStatusLabel !== ''
+                      ? paneStatusLabel
+                      : (pane.restoreState.cwd ??
+                        (pane.restoreState.kind === 'ssh' ? 'SSH' : 'Local'))
+
+                  return (
+                    <section
+                      className={`terminal-pane${isActivePane ? ' is-active' : ''}${
+                        pane.status === 'closed' ? ' is-closed' : ''
+                      }`}
+                      key={pane.id}
+                      onPointerDown={() => activatePane(tab.id, pane.id, false)}
+                    >
+                      {tab.panes.length > 1 ? (
+                        <header className="terminal-pane-header">
+                          <div className="terminal-pane-copy">
+                            <span className="terminal-pane-title">{pane.title}</span>
+                            <span className="terminal-pane-meta">{paneMeta}</span>
+                          </div>
+                          <button
+                            aria-label={`Close ${pane.title}`}
+                            className="terminal-pane-close"
+                            onClick={(event) => {
+                              event.stopPropagation()
+                              closePane(tab.id, pane.id)
+                            }}
+                            type="button"
+                          >
+                            <X aria-hidden="true" className="terminal-pane-close-icon" />
+                          </button>
+                        </header>
+                      ) : null}
+                      <div
+                        className="terminal-pane-host"
+                        onContextMenu={(event) =>
+                          handleOpenTerminalContextMenu(event, tab.id, pane.id)
+                        }
+                        ref={(node) => {
+                          if (!node) {
+                            hostElementsRef.current.delete(pane.id)
+                            return
+                          }
+
+                          hostElementsRef.current.set(pane.id, node)
+                          initializePane(tab.id, pane, node)
+                        }}
+                      />
+                    </section>
+                  )
+                })}
+              </div>
+            </div>
           ))}
         </div>
+        {tabContextMenu ? (
+          <div
+            className="tab-context-menu"
+            ref={tabContextMenuRef}
+            role="menu"
+            style={{
+              left: tabContextMenu.x,
+              top: tabContextMenu.y
+            }}
+          >
+            <button
+              className="tab-context-menu-item"
+              disabled={!canSplitTabContextIntoColumns}
+              onClick={() => handleSplitTabFromContextMenu('columns')}
+              role="menuitem"
+              type="button"
+            >
+              <span className="tab-context-menu-item-icon-shell">
+                <Columns2 aria-hidden="true" className="tab-context-menu-icon" />
+              </span>
+              <span className="tab-context-menu-label">Split right</span>
+            </button>
+            <button
+              className="tab-context-menu-item"
+              disabled={!canSplitTabContextIntoRows}
+              onClick={() => handleSplitTabFromContextMenu('rows')}
+              role="menuitem"
+              type="button"
+            >
+              <span className="tab-context-menu-item-icon-shell">
+                <Rows2 aria-hidden="true" className="tab-context-menu-icon" />
+              </span>
+              <span className="tab-context-menu-label">Split down</span>
+            </button>
+            <div aria-hidden="true" className="tab-context-menu-divider" />
+            <button
+              className="tab-context-menu-item"
+              disabled={!canCloseTabContextPane}
+              onClick={handleClosePaneFromTabContextMenu}
+              role="menuitem"
+              type="button"
+            >
+              <span className="tab-context-menu-item-icon-shell">
+                <X aria-hidden="true" className="tab-context-menu-icon" />
+              </span>
+              <span className="tab-context-menu-label">Close active pane</span>
+            </button>
+            <button
+              className="tab-context-menu-item"
+              onClick={handleCloseTabFromContextMenu}
+              role="menuitem"
+              type="button"
+            >
+              <span className="tab-context-menu-item-icon-shell">
+                <X aria-hidden="true" className="tab-context-menu-icon" />
+              </span>
+              <span className="tab-context-menu-label">Close this tab</span>
+            </button>
+          </div>
+        ) : null}
         {terminalContextMenu ? (
           <div
             className="terminal-context-menu"

@@ -449,14 +449,7 @@ body {
   font-size: 10px;
   line-height: 1.2;
   font-family:
-    ui-monospace,
-    'SFMono-Regular',
-    'SF Mono',
-    Menlo,
-    Monaco,
-    Consolas,
-    'Liberation Mono',
-    monospace;
+    ui-monospace, 'SFMono-Regular', 'SF Mono', Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
 }
 
 .ssh-browser-close {
@@ -860,7 +853,8 @@ body {
   flex: 0 0 auto;
 }
 
-.terminal-context-menu {
+.terminal-context-menu,
+.tab-context-menu {
   position: fixed;
   z-index: 40;
   display: grid;
@@ -874,7 +868,8 @@ body {
   -webkit-app-region: no-drag;
 }
 
-.terminal-context-menu-item {
+.terminal-context-menu-item,
+.tab-context-menu-item {
   display: flex;
   align-items: center;
   gap: 9px;
@@ -891,28 +886,35 @@ body {
 }
 
 .terminal-context-menu-item:hover,
-.terminal-context-menu-item:focus-visible {
+.terminal-context-menu-item:focus-visible,
+.tab-context-menu-item:hover,
+.tab-context-menu-item:focus-visible {
   background: rgba(255, 255, 255, 0.08);
   outline: none;
 }
 
-.terminal-context-menu-item:disabled {
+.terminal-context-menu-item:disabled,
+.tab-context-menu-item:disabled {
   color: rgba(181, 198, 220, 0.42);
   cursor: default;
 }
 
 .terminal-context-menu-item:disabled:hover,
-.terminal-context-menu-item:disabled:focus-visible {
+.terminal-context-menu-item:disabled:focus-visible,
+.tab-context-menu-item:disabled:hover,
+.tab-context-menu-item:disabled:focus-visible {
   background: transparent;
 }
 
-.terminal-context-menu-divider {
+.terminal-context-menu-divider,
+.tab-context-menu-divider {
   height: 1px;
   margin: 4px 6px;
   background: rgba(255, 255, 255, 0.1);
 }
 
-.terminal-context-menu-item-icon-shell {
+.terminal-context-menu-item-icon-shell,
+.tab-context-menu-item-icon-shell {
   display: grid;
   place-items: center;
   width: 18px;
@@ -921,14 +923,16 @@ body {
   flex: 0 0 18px;
 }
 
-.terminal-context-menu-label {
+.terminal-context-menu-label,
+.tab-context-menu-label {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.terminal-context-menu-icon {
+.terminal-context-menu-icon,
+.tab-context-menu-icon {
   width: 16px;
   height: 16px;
   stroke-width: 2.1;
@@ -1302,6 +1306,115 @@ body {
 .terminal-screen.is-active {
   visibility: visible;
   pointer-events: auto;
+}
+
+.terminal-pane-grid {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  gap: 1px;
+  background: rgba(119, 215, 255, 0.08);
+}
+
+.terminal-pane-grid.is-single {
+  gap: 0;
+  background: transparent;
+}
+
+.terminal-pane-grid.is-columns {
+  grid-template-columns: repeat(var(--pane-count, 1), minmax(0, 1fr));
+}
+
+.terminal-pane-grid.is-rows {
+  grid-template-rows: repeat(var(--pane-count, 1), minmax(0, 1fr));
+}
+
+.terminal-pane {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+  background: var(--terminal-background, #000);
+  border: 1px solid transparent;
+}
+
+.terminal-pane-grid.is-single .terminal-pane {
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.terminal-pane.is-active {
+  border-color: rgba(119, 215, 255, 0.22);
+}
+
+.terminal-pane-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  height: 32px;
+  padding: 0 8px 0 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(7, 12, 19, 0.96);
+}
+
+.terminal-pane-copy {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.terminal-pane-title,
+.terminal-pane-meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.terminal-pane-title {
+  color: #f5fbff;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.terminal-pane-meta {
+  color: rgba(181, 198, 220, 0.68);
+  font-size: 11px;
+}
+
+.terminal-pane-close {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: rgba(181, 198, 220, 0.72);
+  cursor: pointer;
+}
+
+.terminal-pane-close:hover,
+.terminal-pane-close:focus-visible {
+  background: rgba(255, 255, 255, 0.08);
+  color: #f5fbff;
+  outline: none;
+}
+
+.terminal-pane-close-icon {
+  width: 13px;
+  height: 13px;
+  stroke-width: 2.2;
+}
+
+.terminal-pane-host {
+  min-width: 0;
+  min-height: 0;
+  background: transparent;
 }
 
 .terminal-screen .xterm {
