@@ -630,6 +630,13 @@ body {
   border: 1px solid rgba(119, 215, 255, 0.12);
   border-radius: 8px;
   background: rgba(9, 14, 22, 0.52);
+  transition:
+    background-color 140ms ease,
+    opacity 140ms ease;
+}
+
+.ssh-browser-list-shell.is-loading {
+  background: rgba(9, 14, 22, 0.6);
 }
 
 .ssh-browser-list {
@@ -656,7 +663,8 @@ body {
   text-align: left;
   transition:
     background-color 160ms ease,
-    color 160ms ease;
+    color 160ms ease,
+    opacity 160ms ease;
 }
 
 .ssh-browser-entry:last-child {
@@ -675,6 +683,14 @@ body {
 .ssh-browser-entry:focus-visible {
   background: rgba(255, 255, 255, 0.04);
   outline: none;
+}
+
+.ssh-browser-list-shell.is-loading .ssh-browser-entry {
+  opacity: 0.66;
+}
+
+.ssh-browser-entry:disabled {
+  cursor: wait;
 }
 
 .ssh-browser-entry-main {

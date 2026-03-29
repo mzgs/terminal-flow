@@ -153,6 +153,7 @@ interface SshBrowserState {
   errorMessage: string | null
   filterQuery: string
   isLoading: boolean
+  pendingPath: string | null
   path: string | null
   requestId: number
   tabId: string
@@ -5472,16 +5473,27 @@ function TerminalApp(): React.JSX.Element {
 
       setSshBrowserStates((currentStates) => {
         const currentState = currentStates[tabId]
+        const requestedPath =
+          path ?? (currentState && currentState.configId === configId ? currentState.path : null)
+        const shouldResetEntries =
+          currentState !== undefined &&
+          currentState.configId === configId &&
+          requestedPath !== null &&
+          currentState.path !== requestedPath
 
         return {
           ...currentStates,
           [tabId]: {
             configId,
-            entries: currentState && currentState.configId === configId ? currentState.entries : [],
+            entries:
+              currentState && currentState.configId === configId && !shouldResetEntries
+                ? currentState.entries
+                : [],
             errorMessage: null,
             filterQuery:
               currentState && currentState.configId === configId ? currentState.filterQuery : '',
             isLoading: true,
+            pendingPath: requestedPath,
             path:
               currentState && currentState.configId === configId
                 ? currentState.path
@@ -5513,6 +5525,7 @@ function TerminalApp(): React.JSX.Element {
                 entries: listing.entries,
                 errorMessage: null,
                 isLoading: false,
+                pendingPath: null,
                 path: listing.path
               }
             }
@@ -5551,7 +5564,8 @@ function TerminalApp(): React.JSX.Element {
               [tabId]: {
                 ...currentState,
                 errorMessage: message || 'Unable to load this remote directory.',
-                isLoading: false
+                isLoading: false,
+                pendingPath: null
               }
             }
           })
@@ -9191,12 +9205,19 @@ function TerminalApp(): React.JSX.Element {
                 browserState.filterQuery
               )
               const browserFilterQuery = browserState.filterQuery.trim()
+              const browserDisplayPath = browserState.pendingPath ?? browserState.path
               const browserServerTarget = sshServer
                 ? formatSshTarget(sshServer)
                 : 'Remote workspace'
+              const isNavigatingToDirectory =
+                browserState.isLoading &&
+                browserState.pendingPath !== null &&
+                browserState.pendingPath !== browserState.path
               const browserSectionNote = browserState.errorMessage
                 ? 'The directory listing could not be loaded.'
-                : browserState.isLoading
+                : isNavigatingToDirectory
+                  ? 'Opening folder...'
+                  : browserState.isLoading
                   ? 'Refreshing remote directory...'
                   : null
               const isActiveBrowser = browserState.tabId === activeSshBrowserState?.tabId
@@ -9320,7 +9341,9 @@ function TerminalApp(): React.JSX.Element {
                     {browserState.errorMessage ? (
                       <p className="ssh-browser-error">{browserState.errorMessage}</p>
                     ) : null}
-                    <div className="ssh-browser-list-shell">
+                    <div
+                      className={`ssh-browser-list-shell${browserState.isLoading ? ' is-loading' : ''}`}
+                    >
                       <div
                         className="ssh-browser-list"
                         ref={(node) => {
@@ -9364,6 +9387,7 @@ function TerminalApp(): React.JSX.Element {
                               className={`ssh-browser-entry${entry.isDirectory ? ' is-directory' : ''}${
                                 canOpenInEditor ? ' is-editable' : ''
                               }`}
+                              disabled={browserState.isLoading}
                               key={`${entry.type}-${entry.name}`}
                               onClick={
                                 entry.isDirectory
@@ -9421,10 +9445,10 @@ function TerminalApp(): React.JSX.Element {
                   </div>
                   <div
                     className="ssh-browser-statusbar"
-                    title={browserState.path ?? 'Remote path unavailable'}
+                    title={browserDisplayPath ?? 'Remote path unavailable'}
                   >
                     <p className="ssh-browser-path">
-                      {browserState.path ?? 'Remote path unavailable'}
+                      {browserDisplayPath ?? 'Remote path unavailable'}
                     </p>
                   </div>
                 </aside>
