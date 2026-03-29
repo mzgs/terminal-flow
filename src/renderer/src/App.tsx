@@ -51,6 +51,7 @@ import {
   Palette,
   Pencil,
   Plus,
+  RefreshCw,
   Search,
   Server,
   Settings,
@@ -8753,22 +8754,14 @@ function TerminalApp(): React.JSX.Element {
               const browserParentPath = browserState.path
                 ? getRemoteDirectoryParentPath(browserState.path)
                 : null
-              const browserDirectoryCount = browserState.entries.filter(
-                (entry) => entry.isDirectory
-              ).length
-              const browserFileCount = browserState.entries.length - browserDirectoryCount
-              const browserItemCountLabel = `${browserState.entries.length} item${
-                browserState.entries.length === 1 ? '' : 's'
-              }`
-              const browserFolderCountLabel = `${browserDirectoryCount} folder${
-                browserDirectoryCount === 1 ? '' : 's'
-              }`
-              const browserFileCountLabel = `${browserFileCount} file${
-                browserFileCount === 1 ? '' : 's'
-              }`
               const browserServerTarget = sshServer
                 ? formatSshTarget(sshServer)
                 : 'Remote workspace'
+              const browserSectionNote = browserState.errorMessage
+                ? 'The directory listing could not be loaded.'
+                : browserState.isLoading
+                  ? 'Refreshing remote directory...'
+                  : null
               const isActiveBrowser = browserState.tabId === activeSshBrowserState?.tabId
 
               return (
@@ -8787,16 +8780,13 @@ function TerminalApp(): React.JSX.Element {
                           icon={sshServer?.icon}
                         />
                         <div className="ssh-browser-title-copy">
-                          <h2 className="ssh-browser-title">SFTP Browser</h2>
+                          <h2 className="ssh-browser-title">
+                            {sshServer ? sshServer.name : 'SFTP Browser'}
+                          </h2>
                           <p className="ssh-browser-description">
-                            {sshServer ? sshServer.name : 'Remote workspace'}
+                            {sshServer ? browserServerTarget : 'Remote workspace'}
                           </p>
                         </div>
-                      </div>
-                      <div className="ssh-browser-stats">
-                        <span className="ssh-browser-stat">{browserFolderCountLabel}</span>
-                        <span className="ssh-browser-stat">{browserFileCountLabel}</span>
-                        <span className="ssh-browser-stat">{browserItemCountLabel}</span>
                       </div>
                     </div>
                     <button
@@ -8809,32 +8799,34 @@ function TerminalApp(): React.JSX.Element {
                     </button>
                   </div>
                   <div className="ssh-browser-toolbar">
-                    <div className="ssh-browser-location">
-                      <span className="ssh-browser-location-label">Path</span>
-                      <span
-                        className="ssh-browser-path"
-                        title={browserState.path ?? 'Loading path'}
-                      >
-                        {browserState.path ?? 'Loading path...'}
-                      </span>
-                      <span className="ssh-browser-location-meta">{browserServerTarget}</span>
-                    </div>
                     <div className="ssh-browser-toolbar-actions">
                       <button
-                        className="ssh-browser-toolbar-button"
+                        aria-label="Open parent folder"
+                        className="ssh-browser-toolbar-button is-icon"
                         disabled={!browserParentPath || browserState.isLoading}
                         onClick={() => handleOpenSshBrowserParent(browserState)}
+                        title="Up"
                         type="button"
                       >
-                        Up
+                        <ChevronUp
+                          aria-hidden="true"
+                          className="ssh-browser-toolbar-button-icon"
+                        />
                       </button>
                       <button
-                        className="ssh-browser-toolbar-button"
+                        aria-label={browserState.isLoading ? 'Refreshing...' : 'Refresh'}
+                        className="ssh-browser-toolbar-button is-icon"
                         disabled={browserState.isLoading}
                         onClick={() => handleRefreshSshBrowser(browserState)}
+                        title={browserState.isLoading ? 'Refreshing...' : 'Refresh'}
                         type="button"
                       >
-                        {browserState.isLoading ? 'Loading...' : 'Refresh'}
+                        <RefreshCw
+                          aria-hidden="true"
+                          className={`ssh-browser-toolbar-button-icon${
+                            browserState.isLoading ? ' is-spinning' : ''
+                          }`}
+                        />
                       </button>
                     </div>
                   </div>
@@ -8842,13 +8834,9 @@ function TerminalApp(): React.JSX.Element {
                     <div className="ssh-browser-section-header">
                       <div className="ssh-browser-section-copy">
                         <h3 className="ssh-browser-section-title">Contents</h3>
-                        <p className="ssh-browser-section-note">
-                          {browserState.errorMessage
-                            ? 'The directory listing could not be loaded.'
-                            : browserState.isLoading
-                              ? 'Refreshing remote directory...'
-                              : browserItemCountLabel}
-                        </p>
+                        {browserSectionNote ? (
+                          <p className="ssh-browser-section-note">{browserSectionNote}</p>
+                        ) : null}
                       </div>
                     </div>
                     {browserState.errorMessage ? (
@@ -8882,10 +8870,8 @@ function TerminalApp(): React.JSX.Element {
                                   />
                                   <span className="ssh-browser-entry-copy">
                                     <span className="ssh-browser-entry-name">{entry.name}</span>
-                                    <span className="ssh-browser-entry-meta">Directory</span>
                                   </span>
                                 </span>
-                                <span className="ssh-browser-entry-hint">Open</span>
                               </button>
                             )
                           }
@@ -8913,13 +8899,7 @@ function TerminalApp(): React.JSX.Element {
                                 />
                                 <span className="ssh-browser-entry-copy">
                                   <span className="ssh-browser-entry-name">{entry.name}</span>
-                                  <span className="ssh-browser-entry-meta">
-                                    {canOpenInEditor ? 'Double-click to edit' : 'File'}
-                                  </span>
                                 </span>
-                              </span>
-                              <span className="ssh-browser-entry-hint">
-                                {canOpenInEditor ? 'Edit' : 'File'}
                               </span>
                             </div>
                           )

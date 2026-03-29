@@ -438,29 +438,6 @@ body {
   overflow-wrap: anywhere;
 }
 
-.ssh-browser-stats {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 12px;
-}
-
-.ssh-browser-stat {
-  color: var(--color-text-muted);
-  font-size: 11px;
-  font-weight: 500;
-  line-height: 1.4;
-}
-
-.ssh-browser-path {
-  overflow: hidden;
-  color: var(--color-text);
-  font-size: 13px;
-  font-weight: 500;
-  line-height: 1.4;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .ssh-browser-close {
   display: inline-grid;
   place-items: center;
@@ -496,31 +473,6 @@ body {
 .ssh-browser-toolbar {
   display: grid;
   gap: 12px;
-}
-
-.ssh-browser-location {
-  display: grid;
-  gap: 6px;
-  min-width: 0;
-  padding: 10px 12px;
-  border: 1px solid rgba(119, 215, 255, 0.14);
-  border-radius: 8px;
-  background: rgba(9, 14, 22, 0.72);
-}
-
-.ssh-browser-location-label {
-  color: var(--color-text-muted);
-  font-size: 11px;
-  font-weight: 600;
-  line-height: 1.2;
-}
-
-.ssh-browser-location-meta {
-  color: var(--color-text-muted);
-  font-size: 12px;
-  line-height: 1.5;
-  word-break: break-word;
-  overflow-wrap: anywhere;
 }
 
 .ssh-browser-toolbar-actions {
@@ -561,6 +513,23 @@ body {
 .ssh-browser-toolbar-button:disabled {
   opacity: 0.58;
   cursor: wait;
+}
+
+.ssh-browser-toolbar-button.is-icon {
+  min-width: 0;
+  width: 38px;
+  padding: 0;
+}
+
+.ssh-browser-toolbar-button-icon {
+  width: 16px;
+  height: 16px;
+  stroke-width: 2.1;
+  flex: 0 0 auto;
+}
+
+.ssh-browser-toolbar-button-icon.is-spinning {
+  animation: remote-editor-loading-spin 800ms linear infinite;
 }
 
 .ssh-browser-section {
@@ -722,37 +691,15 @@ body {
   color: rgba(255, 142, 142, 0.88);
 }
 
-.ssh-browser-entry-name,
-.ssh-browser-entry-meta {
+.ssh-browser-entry-name {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.ssh-browser-entry-name {
   color: var(--color-text);
   font-size: 13px;
   font-weight: 500;
   line-height: 1.35;
-}
-
-.ssh-browser-entry-meta {
-  color: var(--color-text-muted);
-  font-size: 12px;
-  line-height: 1.4;
-}
-
-.ssh-browser-entry-hint {
-  flex: 0 0 auto;
-  color: var(--color-text-muted);
-  font-size: 11px;
-  font-weight: 600;
-  line-height: 1;
-}
-
-.ssh-browser-entry.is-editable .ssh-browser-entry-hint {
-  color: rgba(119, 215, 255, 0.78);
 }
 
 .ssh-browser-empty {
