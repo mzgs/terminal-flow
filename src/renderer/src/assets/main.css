@@ -439,6 +439,14 @@ body {
   overflow-wrap: anywhere;
 }
 
+.ssh-browser-path {
+  margin: 0;
+  color: rgba(181, 198, 220, 0.52);
+  font-size: 11px;
+  line-height: 1.4;
+  word-break: break-all;
+}
+
 .ssh-browser-close {
   display: inline-grid;
   place-items: center;
@@ -486,6 +494,7 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: 8px;
   min-width: 88px;
   height: 38px;
   padding: 0 14px;
@@ -519,6 +528,7 @@ body {
 .ssh-browser-toolbar-button.is-icon {
   min-width: 0;
   width: 38px;
+  gap: 0;
   padding: 0;
 }
 
@@ -531,6 +541,46 @@ body {
 
 .ssh-browser-toolbar-button-icon.is-spinning {
   animation: remote-editor-loading-spin 800ms linear infinite;
+}
+
+.ssh-browser-toolbar-filters {
+  display: grid;
+  gap: 10px;
+}
+
+.ssh-browser-filter-shell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  height: 38px;
+  padding: 0 10px;
+  border: 1px solid rgba(119, 215, 255, 0.14);
+  border-radius: 8px;
+  background: rgba(9, 14, 22, 0.72);
+}
+
+.ssh-browser-filter-icon {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  color: rgba(181, 198, 220, 0.72);
+  stroke-width: 2.1;
+}
+
+.ssh-browser-filter-input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-text);
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+}
+
+.ssh-browser-filter-input::placeholder {
+  color: rgba(181, 198, 220, 0.52);
 }
 
 .ssh-browser-section {
@@ -571,6 +621,7 @@ body {
 
 .ssh-browser-list {
   display: grid;
+  align-content: start;
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
@@ -578,7 +629,7 @@ body {
 
 .ssh-browser-entry {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
   width: 100%;
@@ -588,6 +639,7 @@ body {
   border-bottom: 1px solid rgba(119, 215, 255, 0.12);
   background: transparent;
   color: inherit;
+  text-align: left;
   transition:
     background-color 160ms ease,
     color 160ms ease;
@@ -599,16 +651,14 @@ body {
 
 .ssh-browser-entry.is-directory {
   cursor: pointer;
-  text-align: left;
 }
 
 .ssh-browser-entry.is-editable {
-  cursor: default;
+  cursor: pointer;
 }
 
 .ssh-browser-entry:hover,
-.ssh-browser-entry.is-directory:hover,
-.ssh-browser-entry.is-directory:focus-visible {
+.ssh-browser-entry:focus-visible {
   background: rgba(255, 255, 255, 0.04);
   outline: none;
 }
@@ -625,6 +675,16 @@ body {
   display: grid;
   gap: 2px;
   min-width: 0;
+}
+
+.ssh-browser-entry-meta {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: rgba(181, 198, 220, 0.6);
+  font-size: 11px;
+  line-height: 1.35;
 }
 
 .ssh-browser-entry-icon {
@@ -679,6 +739,26 @@ body {
   font-size: 13px;
   font-weight: 500;
   line-height: 1.35;
+}
+
+.ssh-browser-entry-aside {
+  display: grid;
+  gap: 3px;
+  flex: 0 0 auto;
+  min-width: 78px;
+  text-align: right;
+}
+
+.ssh-browser-entry-summary,
+.ssh-browser-entry-timestamp {
+  color: rgba(181, 198, 220, 0.72);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.ssh-browser-entry-summary {
+  color: var(--color-text);
+  font-weight: 500;
 }
 
 .ssh-browser-empty {
@@ -1235,6 +1315,10 @@ body {
     border: 1px solid rgba(119, 215, 255, 0.14);
     border-radius: 10px;
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+  }
+
+  .ssh-browser-toolbar-filters {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 

@@ -142,6 +142,7 @@ interface SshBrowserState {
   configId: string
   entries: SshRemoteDirectoryEntry[]
   errorMessage: string | null
+  filterQuery: string
   isLoading: boolean
   path: string | null
   requestId: number
@@ -498,6 +499,12 @@ const sshBrowserFileIconBySuffix = new Map<string, SshBrowserFileIconDescriptor>
   ['.conf', sshBrowserTextFileIconDescriptor],
   ['.csv', sshBrowserTextFileIconDescriptor]
 ])
+const sshBrowserTimestampFormatter = new Intl.DateTimeFormat(undefined, {
+  day: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+  month: 'short'
+})
 const sshRemoteEditorShellExtensions = [StreamLanguage.define(shellLanguage)]
 const sshRemoteEditorPropertiesExtensions = [StreamLanguage.define(propertiesLanguage)]
 const sshRemoteEditorDiffExtensions = [StreamLanguage.define(diffLanguage)]
@@ -2506,6 +2513,66 @@ function getRemoteDirectoryParentPath(path: string): string | null {
   return normalizedPath.slice(0, lastSlashIndex)
 }
 
+function formatSshBrowserEntrySize(size: number | null): string {
+  if (!Number.isFinite(size) || size === null || size < 0) {
+    return '--'
+  }
+
+  if (size < 1024) {
+    return `${size} B`
+  }
+
+  if (size < 1024 * 1024) {
+    return `${(size / 1024).toFixed(size >= 10 * 1024 ? 0 : 1)} KB`
+  }
+
+  if (size < 1024 * 1024 * 1024) {
+    return `${(size / (1024 * 1024)).toFixed(size >= 10 * 1024 * 1024 ? 0 : 1)} MB`
+  }
+
+  return `${(size / (1024 * 1024 * 1024)).toFixed(size >= 10 * 1024 * 1024 * 1024 ? 0 : 1)} GB`
+}
+
+function formatSshBrowserEntryTimestamp(timestamp: number | null): string {
+  if (!Number.isFinite(timestamp) || timestamp === null || timestamp <= 0) {
+    return '--'
+  }
+
+  return sshBrowserTimestampFormatter.format(new Date(timestamp))
+}
+
+function getSshBrowserEntryKindLabel(entry: SshRemoteDirectoryEntry): string {
+  if (entry.type === 'directory') {
+    return 'Folder'
+  }
+
+  if (entry.type === 'symlink') {
+    return 'Link'
+  }
+
+  if (entry.type === 'other') {
+    return 'Special'
+  }
+
+  return 'File'
+}
+
+function getSshBrowserEntryFilterText(entry: SshRemoteDirectoryEntry): string {
+  return [entry.name, entry.permissions ?? '', getSshBrowserEntryKindLabel(entry)]
+    .join(' ')
+    .toLowerCase()
+}
+
+function getVisibleSshBrowserEntries(
+  entries: SshRemoteDirectoryEntry[],
+  filterQuery: string
+): SshRemoteDirectoryEntry[] {
+  const normalizedQuery = filterQuery.trim().toLowerCase()
+  return normalizedQuery === ''
+    ? entries
+    : entries.filter((entry) => getSshBrowserEntryFilterText(entry).includes(normalizedQuery))
+}
+
 function getSshBrowserEntryNameError(name: string): string | null {
   if (name === '') {
     return 'Enter a name before continuing.'
@@ -2554,7 +2621,7 @@ function getSshBrowserFileIconDescriptor(fileName: string): SshBrowserFileIconDe
 }
 
 function canEditSshRemoteFile(entry: SshRemoteDirectoryEntry): boolean {
-  if (entry.isDirectory) {
+  if (entry.isDirectory || entry.type === 'symlink' || entry.type === 'other') {
     return false
   }
 
@@ -5387,6 +5454,8 @@ function TerminalApp(): React.JSX.Element {
             configId,
             entries: currentState && currentState.configId === configId ? currentState.entries : [],
             errorMessage: null,
+            filterQuery:
+              currentState && currentState.configId === configId ? currentState.filterQuery : '',
             isLoading: true,
             path:
               currentState && currentState.configId === configId
@@ -7148,6 +7217,58 @@ function TerminalApp(): React.JSX.Element {
     runtime.terminal.focus()
   }, [])
 
+  const uploadLocalPathsToSshTarget = useCallback(
+    (tabId: string, configId: string, targetPath: string, paths: string[]): void => {
+      const normalizedTargetPath = targetPath.trim()
+      const normalizedPaths = paths.map((path) => path.trim()).filter((path) => path !== '')
+
+      if (normalizedTargetPath === '' || normalizedPaths.length === 0) {
+        return
+      }
+
+      const browserState = sshBrowserStatesRef.current[tabId]
+
+      if (browserState?.path === normalizedTargetPath) {
+        updateSshBrowserState(tabId, (currentState) => ({
+          ...currentState,
+          errorMessage: null,
+          isLoading: true
+        }))
+      }
+
+      void window.api.ssh
+        .uploadPaths(configId, normalizedTargetPath, normalizedPaths)
+        .then(() => {
+          const nextBrowserState = sshBrowserStatesRef.current[tabId]
+
+          if (nextBrowserState?.path === normalizedTargetPath) {
+            loadSshDirectory(nextBrowserState.configId, normalizedTargetPath, tabId)
+          } else if (browserState?.path === normalizedTargetPath) {
+            updateSshBrowserState(tabId, (currentState) => ({
+              ...currentState,
+              errorMessage: null,
+              isLoading: false
+            }))
+          }
+        })
+        .catch((error) => {
+          const message = error instanceof Error ? error.message : String(error)
+          const fallbackMessage = message || 'Unable to upload the selected files.'
+
+          if (browserState?.path === normalizedTargetPath) {
+            updateSshBrowserState(tabId, (currentState) => ({
+              ...currentState,
+              errorMessage: fallbackMessage,
+              isLoading: false
+            }))
+          }
+
+          writeTerminalStatusToTab(tabId, `Upload failed: ${fallbackMessage}`)
+        })
+    },
+    [loadSshDirectory, updateSshBrowserState, writeTerminalStatusToTab]
+  )
+
   const uploadDroppedPathsToActiveSshTab = useCallback(
     (paths: string[]): void => {
       if (paths.length === 0) {
@@ -7167,7 +7288,7 @@ function TerminalApp(): React.JSX.Element {
       }
 
       const browserState = sshBrowserStatesRef.current[currentActiveTabId]
-      const targetPath = (activeTab.restoreState.cwd ?? '').trim()
+      const targetPath = (browserState?.path ?? activeTab.restoreState.cwd ?? '').trim()
 
       if (targetPath === '') {
         const message = 'Unable to upload: remote working directory is not available yet.'
@@ -7184,45 +7305,14 @@ function TerminalApp(): React.JSX.Element {
         return
       }
 
-      if (browserState?.path === targetPath) {
-        updateSshBrowserState(currentActiveTabId, (currentState) => ({
-          ...currentState,
-          errorMessage: null,
-          isLoading: true
-        }))
-      }
-
-      void window.api.ssh
-        .uploadPaths(activeTab.restoreState.configId, targetPath, paths)
-        .then(() => {
-          const nextBrowserState = sshBrowserStatesRef.current[currentActiveTabId]
-
-          if (nextBrowserState?.path === targetPath) {
-            loadSshDirectory(nextBrowserState.configId, targetPath, currentActiveTabId)
-          } else if (browserState?.path === targetPath) {
-            updateSshBrowserState(currentActiveTabId, (currentState) => ({
-              ...currentState,
-              errorMessage: null,
-              isLoading: false
-            }))
-          }
-        })
-        .catch((error) => {
-          const message = error instanceof Error ? error.message : String(error)
-          const fallbackMessage = message || 'Unable to upload the dropped files.'
-
-          if (browserState?.path === targetPath) {
-            updateSshBrowserState(currentActiveTabId, (currentState) => ({
-              ...currentState,
-              errorMessage: fallbackMessage,
-              isLoading: false
-            }))
-          }
-
-          writeTerminalStatusToTab(currentActiveTabId, `Upload failed: ${fallbackMessage}`)
-        })
+      uploadLocalPathsToSshTarget(
+        currentActiveTabId,
+        activeTab.restoreState.configId,
+        targetPath,
+        paths
+      )
     },
-    [loadSshDirectory, updateSshBrowserState, writeTerminalStatusToTab]
+    [updateSshBrowserState, uploadLocalPathsToSshTarget, writeTerminalStatusToTab]
   )
 
   const handleWorkspaceDragOver = useCallback((event: React.DragEvent<HTMLElement>): void => {
@@ -7664,6 +7754,59 @@ function TerminalApp(): React.JSX.Element {
     [loadSshDirectory]
   )
 
+  const handleChangeSshBrowserFilterQuery = useCallback(
+    (tabId: string, filterQuery: string): void => {
+      updateSshBrowserState(tabId, (currentState) => ({
+        ...currentState,
+        filterQuery
+      }))
+    },
+    [updateSshBrowserState]
+  )
+
+  const handleUploadToSshBrowser = useCallback(
+    (browserState: SshBrowserState): void => {
+      if (!browserState.path || browserState.isLoading) {
+        return
+      }
+
+      updateSshBrowserState(browserState.tabId, (currentState) => ({
+        ...currentState,
+        errorMessage: null
+      }))
+
+      void window.api.shell
+        .pickPaths({
+          allowDirectories: true,
+          allowFiles: true,
+          buttonLabel: 'Upload',
+          multiSelections: true,
+          title: 'Select files or folders to upload'
+        })
+        .then((paths) => {
+          if (paths.length === 0) {
+            return
+          }
+
+          uploadLocalPathsToSshTarget(
+            browserState.tabId,
+            browserState.configId,
+            browserState.path!,
+            paths
+          )
+        })
+        .catch((error) => {
+          const message = error instanceof Error ? error.message : String(error)
+
+          updateSshBrowserState(browserState.tabId, (currentState) => ({
+            ...currentState,
+            errorMessage: message || 'Unable to choose files to upload.'
+          }))
+        })
+    },
+    [updateSshBrowserState, uploadLocalPathsToSshTarget]
+  )
+
   const handleCreateSshBrowserEntry = useCallback(
     (browserState: SshBrowserState, isDirectory: boolean): void => {
       if (!browserState.path || browserState.isLoading) {
@@ -7738,7 +7881,12 @@ function TerminalApp(): React.JSX.Element {
     closeSshBrowserCreateDialog()
     void runSshBrowserMutation(
       browserState,
-      () => window.api.ssh.createPath(browserState.configId, remotePath, currentDialogState.isDirectory),
+      () =>
+        window.api.ssh.createPath(
+          browserState.configId,
+          remotePath,
+          currentDialogState.isDirectory
+        ),
       `Unable to create this remote ${entryLabel}.`
     )
   }, [closeSshBrowserCreateDialog, runSshBrowserMutation, sshBrowserCreateDialogState])
@@ -8181,6 +8329,22 @@ function TerminalApp(): React.JSX.Element {
       closeSshBrowserContextMenu()
     },
     [closeSshBrowserContextMenu, openTextEditorFile]
+  )
+
+  const handleSshBrowserFileEntryKeyDown = useCallback(
+    (
+      event: React.KeyboardEvent<HTMLButtonElement>,
+      browserState: SshBrowserState,
+      entry: SshRemoteDirectoryEntry
+    ): void => {
+      if ((event.key !== 'Enter' && event.key !== ' ') || !canEditSshRemoteFile(entry)) {
+        return
+      }
+
+      event.preventDefault()
+      handleOpenSshRemoteFile(browserState, entry)
+    },
+    [handleOpenSshRemoteFile]
   )
 
   const handleRenameSshBrowserEntry = useCallback(
@@ -8970,6 +9134,11 @@ function TerminalApp(): React.JSX.Element {
               const browserParentPath = browserState.path
                 ? getRemoteDirectoryParentPath(browserState.path)
                 : null
+              const visibleEntries = getVisibleSshBrowserEntries(
+                browserState.entries,
+                browserState.filterQuery
+              )
+              const browserFilterQuery = browserState.filterQuery.trim()
               const browserServerTarget = sshServer
                 ? formatSshTarget(sshServer)
                 : 'Remote workspace'
@@ -9004,6 +9173,11 @@ function TerminalApp(): React.JSX.Element {
                           </p>
                         </div>
                       </div>
+                      {browserState.path ? (
+                        <p className="ssh-browser-path" title={browserState.path}>
+                          {browserState.path}
+                        </p>
+                      ) : null}
                     </div>
                     <button
                       aria-label="Close remote browser"
@@ -9024,10 +9198,16 @@ function TerminalApp(): React.JSX.Element {
                         title="Up"
                         type="button"
                       >
-                        <ArrowUp
-                          aria-hidden="true"
-                          className="ssh-browser-toolbar-button-icon"
-                        />
+                        <ArrowUp aria-hidden="true" className="ssh-browser-toolbar-button-icon" />
+                      </button>
+                      <button
+                        className="ssh-browser-toolbar-button"
+                        disabled={!browserState.path || browserState.isLoading}
+                        onClick={() => handleUploadToSshBrowser(browserState)}
+                        type="button"
+                      >
+                        <Upload aria-hidden="true" className="ssh-browser-toolbar-button-icon" />
+                        Upload
                       </button>
                       <button
                         aria-label="Create new file"
@@ -9037,10 +9217,7 @@ function TerminalApp(): React.JSX.Element {
                         title="New file"
                         type="button"
                       >
-                        <FilePlus
-                          aria-hidden="true"
-                          className="ssh-browser-toolbar-button-icon"
-                        />
+                        <FilePlus aria-hidden="true" className="ssh-browser-toolbar-button-icon" />
                       </button>
                       <button
                         aria-label="Create new folder"
@@ -9071,6 +9248,23 @@ function TerminalApp(): React.JSX.Element {
                         />
                       </button>
                     </div>
+                    <div className="ssh-browser-toolbar-filters">
+                      <label className="ssh-browser-filter-shell">
+                        <Search aria-hidden="true" className="ssh-browser-filter-icon" />
+                        <input
+                          className="ssh-browser-filter-input"
+                          onChange={(event) =>
+                            handleChangeSshBrowserFilterQuery(
+                              browserState.tabId,
+                              event.target.value
+                            )
+                          }
+                          placeholder="Filter by name"
+                          type="text"
+                          value={browserState.filterQuery}
+                        />
+                      </label>
+                    </div>
                   </div>
                   <div className="ssh-browser-section">
                     {browserSectionNote ? (
@@ -9081,64 +9275,88 @@ function TerminalApp(): React.JSX.Element {
                     ) : null}
                     <div className="ssh-browser-list-shell">
                       <div className="ssh-browser-list">
-                        {!browserState.errorMessage && browserState.entries.length === 0 ? (
+                        {!browserState.errorMessage && visibleEntries.length === 0 ? (
                           <div className="ssh-browser-empty">
                             {browserState.isLoading
                               ? 'Loading remote files...'
-                              : 'This folder is empty.'}
+                              : browserFilterQuery !== ''
+                                ? `No matches for "${browserFilterQuery}".`
+                                : 'This folder is empty.'}
                           </div>
                         ) : null}
-                        {browserState.entries.map((entry) => {
-                          if (entry.isDirectory) {
-                            return (
-                              <button
-                                className="ssh-browser-entry is-directory"
-                                key={`dir-${entry.name}`}
-                                onContextMenu={(event) =>
-                                  handleOpenSshBrowserContextMenu(event, browserState, entry)
-                                }
-                                onClick={() => handleOpenSshBrowserDirectory(browserState, entry)}
-                                type="button"
-                              >
-                                <span className="ssh-browser-entry-main">
-                                  <Folder
-                                    aria-hidden="true"
-                                    className="ssh-browser-entry-icon ssh-browser-entry-icon-directory"
-                                  />
-                                  <span className="ssh-browser-entry-copy">
-                                    <span className="ssh-browser-entry-name">{entry.name}</span>
-                                  </span>
-                                </span>
-                              </button>
-                            )
-                          }
-
+                        {visibleEntries.map((entry) => {
                           const fileIconDescriptor = getSshBrowserFileIconDescriptor(entry.name)
-                          const FileIcon = fileIconDescriptor.icon
+                          const EntryIcon = entry.isDirectory ? Folder : fileIconDescriptor.icon
                           const canOpenInEditor = canEditSshRemoteFile(entry)
+                          const entryMeta = [
+                            entry.permissions,
+                            entry.type === 'symlink' ? 'Link' : null
+                          ]
+                            .filter((value): value is string => Boolean(value))
+                            .join(' • ')
+                          const entrySummary = entry.isDirectory
+                            ? 'Folder'
+                            : entry.type === 'symlink'
+                              ? 'Link'
+                              : entry.type === 'other'
+                                ? 'Special'
+                                : formatSshBrowserEntrySize(entry.size)
 
                           return (
-                            <div
-                              className={`ssh-browser-entry${canOpenInEditor ? ' is-editable' : ''}`}
-                              key={`file-${entry.name}`}
-                              onDoubleClick={() => handleOpenSshRemoteFile(browserState, entry)}
+                            <button
+                              className={`ssh-browser-entry${entry.isDirectory ? ' is-directory' : ''}${
+                                canOpenInEditor ? ' is-editable' : ''
+                              }`}
+                              key={`${entry.type}-${entry.name}`}
+                              onClick={
+                                entry.isDirectory
+                                  ? () => handleOpenSshBrowserDirectory(browserState, entry)
+                                  : undefined
+                              }
                               onContextMenu={(event) =>
                                 handleOpenSshBrowserContextMenu(event, browserState, entry)
                               }
-                              title={
-                                canOpenInEditor ? 'Double-click to open in the editor' : undefined
+                              onDoubleClick={
+                                entry.isDirectory
+                                  ? undefined
+                                  : () => handleOpenSshRemoteFile(browserState, entry)
                               }
+                              onKeyDown={
+                                entry.isDirectory
+                                  ? undefined
+                                  : (event) =>
+                                      handleSshBrowserFileEntryKeyDown(event, browserState, entry)
+                              }
+                              title={
+                                canOpenInEditor
+                                  ? 'Press Enter or double-click to open in the editor'
+                                  : undefined
+                              }
+                              type="button"
                             >
                               <span className="ssh-browser-entry-main">
-                                <FileIcon
+                                <EntryIcon
                                   aria-hidden="true"
-                                  className={`ssh-browser-entry-icon ${fileIconDescriptor.toneClassName}`}
+                                  className={`ssh-browser-entry-icon ${
+                                    entry.isDirectory
+                                      ? 'ssh-browser-entry-icon-directory'
+                                      : fileIconDescriptor.toneClassName
+                                  }`}
                                 />
                                 <span className="ssh-browser-entry-copy">
                                   <span className="ssh-browser-entry-name">{entry.name}</span>
+                                  <span className="ssh-browser-entry-meta">
+                                    {entryMeta || getSshBrowserEntryKindLabel(entry)}
+                                  </span>
                                 </span>
                               </span>
-                            </div>
+                              <span className="ssh-browser-entry-aside">
+                                <span className="ssh-browser-entry-summary">{entrySummary}</span>
+                                <span className="ssh-browser-entry-timestamp">
+                                  {formatSshBrowserEntryTimestamp(entry.modifiedAt)}
+                                </span>
+                              </span>
+                            </button>
                           )
                         })}
                       </div>

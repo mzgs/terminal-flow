@@ -3,6 +3,7 @@ import type { TerminalCreateResult } from './terminal'
 export type SshAuthMethod = 'privateKey' | 'password'
 export type SshServerIcon = string
 export const defaultSshServerIcon: SshServerIcon = 'linux'
+export type SshRemoteEntryType = 'directory' | 'file' | 'symlink' | 'other'
 
 export function normalizeSshServerIcon(value: unknown): SshServerIcon {
   return typeof value === 'string' && value.trim() !== '' ? value.trim() : defaultSshServerIcon
@@ -10,7 +11,11 @@ export function normalizeSshServerIcon(value: unknown): SshServerIcon {
 
 export interface SshRemoteDirectoryEntry {
   isDirectory: boolean
+  modifiedAt: number | null
   name: string
+  permissions: string | null
+  size: number | null
+  type: SshRemoteEntryType
 }
 
 export interface SshRemoteDirectoryListing {

@@ -89,6 +89,7 @@ const settings: SettingsApi = {
 const shell: ShellApi = {
   openExternal: (url) => ipcRenderer.invoke('shell:open-external', url),
   openPath: (path) => ipcRenderer.invoke('shell:open-path', path),
+  pickPaths: (options) => ipcRenderer.invoke('shell:pick-paths', options) as Promise<string[]>,
   readTextFile: (path) =>
     ipcRenderer.invoke('shell:read-text-file', path) as Promise<LocalTextFile>,
   writeTextFile: (path, content) =>

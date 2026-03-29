@@ -28,7 +28,7 @@ import type {
   TerminalCursorStyle
 } from '../shared/settings'
 import type { RestorableTabState, SessionSnapshot, SessionTabSnapshot } from '../shared/session'
-import type { LocalTextFile } from '../shared/shell'
+import type { LocalTextFile, ShellPickPathsOptions } from '../shared/shell'
 import {
   normalizeSshServerIcon,
   type SshDownloadProgressEvent,
@@ -79,9 +79,21 @@ interface SshUploadPlanFile {
   size: number
 }
 
+interface SshDownloadPlanFile {
+  localPath: string
+  remotePath: string
+  size: number
+}
+
 interface SshUploadPlan {
   directories: string[]
   files: SshUploadPlanFile[]
+  totalBytes: number
+}
+
+interface SshDownloadPlan {
+  directories: string[]
+  files: SshDownloadPlanFile[]
   totalBytes: number
 }
 
@@ -99,8 +111,6 @@ const sshPasswordEncryptionSecret = 'T3rm!nal_SSH#2026$Vaulfe35dt@91xZ'
 const sshPasswordEncryptionPrefix = 'enc-v1'
 const sshPasswordEncryptionKey = createHash('sha256').update(sshPasswordEncryptionSecret).digest()
 const sshRemoteCwdOscPrefix = '\u001b]633;TerminalRemoteCwd='
-const sshRemoteDirectoryListingStartPrefix = '__TERMINAL_REMOTE_DIR__'
-const sshRemoteDirectoryListingEndMarker = '__TERMINAL_REMOTE_DIR_END__'
 const sshConnectTimeoutSeconds = 10
 const sshServerAliveIntervalSeconds = 5
 const sshServerAliveCountMax = 2
@@ -1018,6 +1028,73 @@ function isProbablyTextBuffer(buffer: Buffer): boolean {
   return suspiciousByteCount / inspectedLength < 0.1
 }
 
+function formatSftpRightsSegment(value: string): string {
+  const normalizedValue = typeof value === 'string' ? value : ''
+  return ['r', 'w', 'x'].map((token) => (normalizedValue.includes(token) ? token : '-')).join('')
+}
+
+function mapSftpFileTypeToRemoteEntryType(type: string): SshRemoteDirectoryEntry['type'] {
+  if (type === 'd') {
+    return 'directory'
+  }
+
+  if (type === '-') {
+    return 'file'
+  }
+
+  if (type === 'l') {
+    return 'symlink'
+  }
+
+  return 'other'
+}
+
+function mapSftpFileInfoToRemoteEntry(
+  fileInfo: Awaited<ReturnType<SftpClient['list']>>[number]
+): SshRemoteDirectoryEntry {
+  const type = mapSftpFileTypeToRemoteEntryType(fileInfo.type)
+  const permissions =
+    fileInfo.rights &&
+    typeof fileInfo.rights.user === 'string' &&
+    typeof fileInfo.rights.group === 'string' &&
+    typeof fileInfo.rights.other === 'string'
+      ? `${formatSftpRightsSegment(fileInfo.rights.user)}${formatSftpRightsSegment(fileInfo.rights.group)}${formatSftpRightsSegment(fileInfo.rights.other)}`
+      : null
+
+  return {
+    isDirectory: type === 'directory',
+    modifiedAt: Number.isFinite(fileInfo.modifyTime) ? fileInfo.modifyTime : null,
+    name: fileInfo.name,
+    permissions,
+    size: type === 'directory' ? null : Number.isFinite(fileInfo.size) ? fileInfo.size : null,
+    type
+  }
+}
+
+async function resolveSftpDirectoryPath(sftpClient: SftpClient, path?: string): Promise<string> {
+  const normalizedPath = path?.trim()
+
+  if (!normalizedPath) {
+    return sftpClient.cwd()
+  }
+
+  const entryType = await sftpClient.exists(normalizedPath)
+
+  if (!entryType) {
+    throw new Error('Remote folder not found.')
+  }
+
+  if (entryType !== 'd') {
+    const remoteStats = await sftpClient.stat(normalizedPath)
+
+    if (!remoteStats.isDirectory) {
+      throw new Error('Remote path is not a folder.')
+    }
+  }
+
+  return sftpClient.realPath(normalizedPath)
+}
+
 function collectSshUploadPlanEntries(
   localPath: string,
   remotePath: string,
@@ -1068,6 +1145,86 @@ function collectSshUploadPlan(localPaths: string[], targetPath: string): SshUplo
 
     collectSshUploadPlanEntries(normalizedLocalPath, remoteRootPath, directories, files)
   }
+
+  return {
+    directories: Array.from(directories).sort((left, right) => left.length - right.length),
+    files,
+    totalBytes: files.reduce((totalSize, file) => totalSize + file.size, 0)
+  }
+}
+
+async function collectSshDownloadPlanEntries(
+  sftpClient: SftpClient,
+  remotePath: string,
+  localPath: string,
+  directories: Set<string>,
+  files: SshDownloadPlanFile[],
+  fileInfo?: Awaited<ReturnType<SftpClient['list']>>[number]
+): Promise<void> {
+  const entryType = fileInfo?.type ?? (await sftpClient.exists(remotePath))
+
+  if (!entryType) {
+    throw new Error(`Remote path not found: ${remotePath}`)
+  }
+
+  if (entryType === 'd') {
+    directories.add(localPath)
+    const listing = await sftpClient.list(remotePath)
+
+    listing.sort((left, right) => left.name.localeCompare(right.name))
+
+    for (const childEntry of listing) {
+      await collectSshDownloadPlanEntries(
+        sftpClient,
+        joinRemoteUploadPath(remotePath, childEntry.name),
+        join(localPath, childEntry.name),
+        directories,
+        files,
+        childEntry
+      )
+    }
+
+    return
+  }
+
+  const remoteStats = await sftpClient.stat(remotePath)
+
+  if (remoteStats.isDirectory) {
+    directories.add(localPath)
+    const listing = await sftpClient.list(remotePath)
+
+    listing.sort((left, right) => left.name.localeCompare(right.name))
+
+    for (const childEntry of listing) {
+      await collectSshDownloadPlanEntries(
+        sftpClient,
+        joinRemoteUploadPath(remotePath, childEntry.name),
+        join(localPath, childEntry.name),
+        directories,
+        files,
+        childEntry
+      )
+    }
+
+    return
+  }
+
+  files.push({
+    localPath,
+    remotePath,
+    size: remoteStats.size
+  })
+}
+
+async function collectSshDownloadPlan(
+  sftpClient: SftpClient,
+  remotePath: string,
+  localPath: string
+): Promise<SshDownloadPlan> {
+  const directories = new Set<string>()
+  const files: SshDownloadPlanFile[] = []
+
+  await collectSshDownloadPlanEntries(sftpClient, remotePath, localPath, directories, files)
 
   return {
     directories: Array.from(directories).sort((left, right) => left.length - right.length),
@@ -1224,19 +1381,6 @@ function buildInteractiveSshRemoteCommand(cwd?: string): string {
     'fi',
     'emit_cwd',
     'exec "$shell_path" -il'
-  ].filter((line) => line !== '')
-
-  return `sh -lc ${quoteForPosixShell(scriptLines.join('\n'))}`
-}
-
-function buildSshListDirectoryCommand(path?: string): string {
-  const scriptLines = [
-    'set -e',
-    path?.trim() ? `cd -- ${quoteForPosixShell(path.trim())}` : '',
-    'current_path=$(pwd -P)',
-    `printf '${sshRemoteDirectoryListingStartPrefix}%s\\n' "$current_path"`,
-    'LC_ALL=C ls -1Ap',
-    `printf '${sshRemoteDirectoryListingEndMarker}\\n'`
   ].filter((line) => line !== '')
 
   return `sh -lc ${quoteForPosixShell(scriptLines.join('\n'))}`
@@ -1459,28 +1603,74 @@ async function runSftpDownloadCommand(
     await sftpClient.connect(buildSftpConnectOptions(config, password))
 
     const remoteStats = await sftpClient.stat(remotePath)
-    totalBytes = remoteStats.size
     const nextEmitProgress = createSshDownloadProgressEmitter(
+      webContents,
+      downloadId,
+      remotePath,
+      localPath,
+      0
+    )
+    emitProgress = nextEmitProgress
+
+    if (remoteStats.isDirectory) {
+      const downloadPlan = await collectSshDownloadPlan(sftpClient, remotePath, localPath)
+      totalBytes = downloadPlan.totalBytes
+      emitProgress = createSshDownloadProgressEmitter(
+        webContents,
+        downloadId,
+        remotePath,
+        localPath,
+        totalBytes
+      )
+
+      emitProgress('running', 0, downloadPlan.files[0]?.remotePath ?? remotePath)
+
+      for (const directoryPath of downloadPlan.directories) {
+        mkdirSync(directoryPath, { recursive: true })
+      }
+
+      for (const file of downloadPlan.files) {
+        emitProgress('running', transferredBytes, file.remotePath)
+
+        await sftpClient.fastGet(file.remotePath, file.localPath, {
+          step: (totalTransferred, _chunk, total) => {
+            const fileTotalBytes = total > 0 ? total : file.size
+            const nextTransferredBytes =
+              transferredBytes + Math.min(file.size, Math.min(fileTotalBytes, totalTransferred))
+
+            emitProgress?.('running', nextTransferredBytes, file.remotePath)
+          }
+        })
+
+        transferredBytes += file.size
+        emitProgress('running', transferredBytes, file.remotePath)
+      }
+
+      emitProgress('completed', totalBytes, downloadPlan.files.at(-1)?.remotePath ?? remotePath)
+      return
+    }
+
+    totalBytes = remoteStats.size
+    emitProgress = createSshDownloadProgressEmitter(
       webContents,
       downloadId,
       remotePath,
       localPath,
       totalBytes
     )
-    emitProgress = nextEmitProgress
 
-    nextEmitProgress('running', 0, remotePath)
+    emitProgress('running', 0, remotePath)
 
     await sftpClient.fastGet(remotePath, localPath, {
       step: (totalTransferred, _chunk, total) => {
         const fileTotalBytes = total > 0 ? total : totalBytes
 
         transferredBytes = Math.min(fileTotalBytes, totalTransferred)
-        nextEmitProgress('running', transferredBytes, remotePath)
+        emitProgress?.('running', transferredBytes, remotePath)
       }
     })
 
-    nextEmitProgress('completed', totalBytes, remotePath)
+    emitProgress('completed', totalBytes, remotePath)
   } catch (error) {
     emitProgress?.('failed', transferredBytes, remotePath)
     throw error
@@ -1506,55 +1696,6 @@ function getUniqueDownloadPath(path: string): string {
     }
 
     suffix += 1
-  }
-}
-
-function parseSshRemoteDirectoryListing(output: string): SshRemoteDirectoryListing {
-  const entries: SshRemoteDirectoryEntry[] = []
-  const lines = output.split(/\r?\n/)
-  let currentPath: string | null = null
-  let isReadingEntries = false
-
-  for (const line of lines) {
-    if (line.startsWith(sshRemoteDirectoryListingStartPrefix)) {
-      currentPath = line.slice(sshRemoteDirectoryListingStartPrefix.length).trim()
-      isReadingEntries = true
-      continue
-    }
-
-    if (line === sshRemoteDirectoryListingEndMarker) {
-      break
-    }
-
-    if (!isReadingEntries || line === '') {
-      continue
-    }
-
-    const isDirectory = line.endsWith('/')
-    const name = isDirectory ? line.slice(0, -1) : line
-
-    if (name === '.' || name === '..' || name === '') {
-      continue
-    }
-
-    entries.push({ isDirectory, name })
-  }
-
-  if (!currentPath) {
-    throw new Error('Unable to read the remote directory listing.')
-  }
-
-  entries.sort((left, right) => {
-    if (left.isDirectory !== right.isDirectory) {
-      return left.isDirectory ? -1 : 1
-    }
-
-    return left.name.localeCompare(right.name)
-  })
-
-  return {
-    entries,
-    path: currentPath
   }
 }
 
@@ -2377,9 +2518,22 @@ async function listSshDirectory(
   path?: string
 ): Promise<SshRemoteDirectoryListing> {
   const { config, password } = resolveSshServerConnection(configId)
-  const output = await runSshCommand(config, password, buildSshListDirectoryCommand(path))
+  const sftpClient = new SftpClient('terminal-list-directory')
 
-  return parseSshRemoteDirectoryListing(output)
+  try {
+    await sftpClient.connect(buildSftpConnectOptions(config, password))
+    const resolvedPath = await resolveSftpDirectoryPath(sftpClient, path)
+    const entries = await sftpClient.list(resolvedPath)
+
+    return {
+      entries: entries
+        .map((entry) => mapSftpFileInfoToRemoteEntry(entry))
+        .sort((left, right) => left.name.localeCompare(right.name)),
+      path: resolvedPath
+    }
+  } finally {
+    await sftpClient.end().catch(() => false)
+  }
 }
 
 async function createSshPath(configId: string, path: string, isDirectory: boolean): Promise<void> {
@@ -2550,7 +2704,7 @@ async function downloadSshPath(
   const normalizedName = basename(normalizedPath.replace(/\/+$/, '')) || 'download'
   const targetPath = getUniqueDownloadPath(join(downloadsPath, normalizedName))
 
-  if (isDirectory || normalizedPath === '~' || normalizedPath.startsWith('~/')) {
+  if (normalizedPath === '~' || normalizedPath.startsWith('~/')) {
     await runScpCommand(config, password, normalizedPath, targetPath, isDirectory)
     return targetPath
   }
@@ -2622,6 +2776,32 @@ async function openShellPath(path: string): Promise<void> {
   if (errorMessage) {
     throw new Error(errorMessage)
   }
+}
+
+async function pickShellPaths(options?: ShellPickPathsOptions): Promise<string[]> {
+  const allowDirectories = options?.allowDirectories !== false
+  const allowFiles = options?.allowFiles !== false
+
+  if (!allowDirectories && !allowFiles) {
+    throw new Error('At least one path type must be selectable.')
+  }
+
+  const dialogOptions: Electron.OpenDialogOptions = {
+    properties: [
+      ...(allowFiles ? (['openFile'] as const) : []),
+      ...(allowDirectories ? (['openDirectory'] as const) : []),
+      ...(options?.multiSelections === false ? [] : (['multiSelections'] as const)),
+      'dontAddToRecent'
+    ],
+    ...(options?.buttonLabel ? { buttonLabel: options.buttonLabel } : {}),
+    ...(options?.title ? { title: options.title } : {})
+  }
+  const owningWindow = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
+  const result = owningWindow
+    ? await dialog.showOpenDialog(owningWindow, dialogOptions)
+    : await dialog.showOpenDialog(dialogOptions)
+
+  return result.canceled ? [] : result.filePaths
 }
 
 async function openExternalUrl(url: string): Promise<void> {
@@ -2794,6 +2974,9 @@ app.whenReady().then(() => {
   )
   ipcMain.handle('shell:open-external', (_event, url: string) => openExternalUrl(url))
   ipcMain.handle('shell:open-path', (_event, path: string) => openShellPath(path))
+  ipcMain.handle('shell:pick-paths', (_event, options?: ShellPickPathsOptions) =>
+    pickShellPaths(options)
+  )
   ipcMain.handle('shell:read-text-file', (_event, path: string) => readLocalTextFile(path))
   ipcMain.handle('shell:write-text-file', (_event, payload: { content: string; path: string }) =>
     writeLocalTextFile(payload.path, payload.content)
