@@ -128,6 +128,7 @@ interface TerminalRuntime {
   disposeFocus: { dispose: () => void }
   disposeInput: { dispose: () => void }
   fitAddon: FitAddon
+  reconnectTimeoutId: number | null
   terminal: Terminal
   terminalId: number | null
 }
@@ -358,6 +359,7 @@ const maxSshBrowserWidth = 640
 const minSshBrowserWidth = 240
 const minTerminalStageWidth = 320
 const sshBrowserOverlayBreakpointPx = 900
+const sshReconnectDelayMs = 5000
 const sshBrowserResizerWidth = 10
 const sshRemoteCwdSequencePrefix = '\x1b]633;TerminalRemoteCwd='
 const uploadProgressCircleRadius = 16
@@ -2796,14 +2798,14 @@ function canEditSshRemoteFile(entry: SshRemoteDirectoryEntry): boolean {
 function getTerminalItemStatusLabel(
   terminalItem: Pick<TabPaneRecord, 'errorMessage' | 'reconnectAttempt' | 'restoreState' | 'status'>
 ): string {
-  if (terminalItem.status === 'connecting') {
-    if (
-      terminalItem.restoreState.kind === 'ssh' &&
-      typeof terminalItem.reconnectAttempt === 'number'
-    ) {
-      return 'Reconnecting'
-    }
+  if (
+    terminalItem.restoreState.kind === 'ssh' &&
+    typeof terminalItem.reconnectAttempt === 'number'
+  ) {
+    return 'Reconnecting'
+  }
 
+  if (terminalItem.status === 'connecting') {
     return 'Starting'
   }
 
@@ -6286,6 +6288,17 @@ function TerminalApp(): React.JSX.Element {
     })
   }, [])
 
+  const clearPaneReconnectTimeout = useCallback((paneId: string): void => {
+    const runtime = runtimesRef.current.get(paneId)
+
+    if (!runtime || runtime.reconnectTimeoutId === null) {
+      return
+    }
+
+    window.clearTimeout(runtime.reconnectTimeoutId)
+    runtime.reconnectTimeoutId = null
+  }, [])
+
   const finalizePaneConnection = useCallback(
     (
       tabId: string,
@@ -6303,6 +6316,7 @@ function TerminalApp(): React.JSX.Element {
       }
 
       currentRuntime.closed = false
+      clearPaneReconnectTimeout(paneId)
       currentRuntime.terminalId = terminalId
       currentRuntime.terminal.options.disableStdin = false
       terminalToPaneRef.current.set(terminalId, paneId)
@@ -6339,7 +6353,7 @@ function TerminalApp(): React.JSX.Element {
         syncActiveTabLayout(tabId, getActivePaneIdForTab(tabId) === paneId)
       }
     },
-    [getActivePaneIdForTab, syncActiveTabLayout, updatePane]
+    [clearPaneReconnectTimeout, getActivePaneIdForTab, syncActiveTabLayout, updatePane]
   )
 
   const failPaneConnection = useCallback(
@@ -6358,6 +6372,7 @@ function TerminalApp(): React.JSX.Element {
         return
       }
 
+      clearPaneReconnectTimeout(paneId)
       currentRuntime.closed = true
       currentRuntime.terminalId = null
       currentRuntime.terminal.options.disableStdin = true
@@ -6377,7 +6392,7 @@ function TerminalApp(): React.JSX.Element {
         setActiveTabId(tabId)
       }
     },
-    [updatePane]
+    [clearPaneReconnectTimeout, updatePane]
   )
 
   const reconnectSshPane = useCallback(
@@ -6394,6 +6409,8 @@ function TerminalApp(): React.JSX.Element {
         return
       }
 
+      clearPaneReconnectTimeout(paneId)
+
       updatePane(tabId, paneId, (currentPane) => {
         if (currentPane.restoreState.kind !== 'ssh' || currentPane.status === 'connecting') {
           return currentPane
@@ -6403,7 +6420,8 @@ function TerminalApp(): React.JSX.Element {
           ...currentPane,
           errorMessage: undefined,
           exitCode: undefined,
-          reconnectAttempt: 1,
+          reconnectAttempt:
+            typeof currentPane.reconnectAttempt === 'number' ? currentPane.reconnectAttempt : 1,
           status: 'connecting',
           terminalId: null
         }
@@ -6424,7 +6442,59 @@ function TerminalApp(): React.JSX.Element {
           failPaneConnection(tabId, paneId, message, 'Unable to reconnect')
         })
     },
-    [failPaneConnection, finalizePaneConnection, updatePane]
+    [clearPaneReconnectTimeout, failPaneConnection, finalizePaneConnection, updatePane]
+  )
+
+  const scheduleSshPaneReconnect = useCallback(
+    (tabId: string, paneId: string): void => {
+      const tab = tabsRef.current.find((currentTab) => currentTab.id === tabId)
+      const pane = tab ? getPaneById(tab, paneId) : null
+      const runtime = runtimesRef.current.get(paneId)
+
+      if (
+        !pane ||
+        pane.restoreState.kind !== 'ssh' ||
+        !runtime ||
+        runtime.disposed ||
+        isUnmountingRef.current ||
+        runtime.reconnectTimeoutId !== null
+      ) {
+        return
+      }
+
+      runtime.closed = true
+      runtime.terminalId = null
+      runtime.terminal.options.disableStdin = true
+      runtime.terminal.write(`\r\n[reconnecting in ${sshReconnectDelayMs / 1000}s...]\r\n`)
+
+      updatePane(tabId, paneId, (currentPane) => {
+        if (currentPane.restoreState.kind !== 'ssh') {
+          return currentPane
+        }
+
+        return {
+          ...currentPane,
+          errorMessage: undefined,
+          exitCode: undefined,
+          reconnectAttempt:
+            typeof currentPane.reconnectAttempt === 'number' ? currentPane.reconnectAttempt + 1 : 1,
+          status: 'closed',
+          terminalId: null
+        }
+      })
+
+      runtime.reconnectTimeoutId = window.setTimeout(() => {
+        const currentRuntime = runtimesRef.current.get(paneId)
+
+        if (!currentRuntime || currentRuntime.disposed) {
+          return
+        }
+
+        currentRuntime.reconnectTimeoutId = null
+        reconnectSshPane(tabId, paneId)
+      }, sshReconnectDelayMs)
+    },
+    [reconnectSshPane, updatePane]
   )
 
   const maybeReconnectSshPane = useCallback(
@@ -6440,6 +6510,7 @@ function TerminalApp(): React.JSX.Element {
         pane.terminalId !== null ||
         !runtime ||
         runtime.disposed ||
+        runtime.reconnectTimeoutId !== null ||
         runtime.terminalId !== null
       ) {
         return
@@ -6506,6 +6577,7 @@ function TerminalApp(): React.JSX.Element {
       return
     }
 
+    clearPaneReconnectTimeout(paneId)
     runtime.disposed = true
     runtime.disposeFocus.dispose()
     runtime.disposeInput.dispose()
@@ -6522,7 +6594,7 @@ function TerminalApp(): React.JSX.Element {
 
     runtime.terminal.dispose()
     runtimesRef.current.delete(paneId)
-  }, [])
+  }, [clearPaneReconnectTimeout])
 
   const createTab = useCallback(
     (options?: CreateTabOptions): void => {
@@ -6807,6 +6879,7 @@ function TerminalApp(): React.JSX.Element {
           window.api.terminal.write(currentRuntime.terminalId, data)
         }),
         fitAddon,
+        reconnectTimeoutId: null,
         terminal,
         terminalId: null
       }
@@ -7313,7 +7386,7 @@ function TerminalApp(): React.JSX.Element {
       }))
 
       if (shouldReconnectActiveSshTab) {
-        reconnectSshPane(tabId, paneId)
+        scheduleSshPaneReconnect(tabId, paneId)
       }
     })
 
@@ -7321,7 +7394,7 @@ function TerminalApp(): React.JSX.Element {
       disposeData()
       disposeExit()
     }
-  }, [getActivePaneIdForTab, queueSearchRefresh, reconnectSshPane, updatePane])
+  }, [getActivePaneIdForTab, queueSearchRefresh, scheduleSshPaneReconnect, updatePane])
 
   useEffect(() => {
     const disposeCwd = window.api.terminal.onCwd((event) => {

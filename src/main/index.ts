@@ -516,6 +516,33 @@ function destroyTerminal(terminalId: number): void {
   }
 }
 
+function resizeTerminal(terminalId: number, cols: number, rows: number): void {
+  const session = terminals.get(terminalId)
+
+  if (!session) {
+    return
+  }
+
+  try {
+    session.process.resize(Math.max(20, cols), Math.max(8, rows))
+  } catch (error) {
+    const code =
+      typeof error === 'object' && error !== null && 'code' in error
+        ? String((error as { code?: unknown }).code)
+        : null
+    const message = error instanceof Error ? error.message : String(error)
+    const isBadFileDescriptor = code === 'EBADF' || message.includes('EBADF')
+
+    if (isBadFileDescriptor) {
+      terminals.delete(terminalId)
+      stopTerminalCwdTracking(session)
+      return
+    }
+
+    console.warn(`Failed to resize terminal ${terminalId}`, error)
+  }
+}
+
 function destroyOwnerTerminals(ownerId: number): void {
   for (const [terminalId, session] of terminals) {
     if (session.ownerId === ownerId) {
@@ -3220,9 +3247,7 @@ app.whenReady().then(() => {
   ipcMain.on(
     'terminal:resize',
     (_event, payload: { terminalId: number; cols: number; rows: number }) => {
-      terminals
-        .get(payload.terminalId)
-        ?.process.resize(Math.max(20, payload.cols), Math.max(8, payload.rows))
+      resizeTerminal(payload.terminalId, payload.cols, payload.rows)
     }
   )
   ipcMain.on('terminal:kill', (_event, terminalId: number) => {
