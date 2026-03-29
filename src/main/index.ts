@@ -25,6 +25,7 @@ import type {
   QuickCommand,
   SettingsExportResult,
   SettingsImportResult,
+  SftpBrowserOpenMode,
   TerminalCursorStyle
 } from '../shared/settings'
 import type { RestorableTabState, SessionSnapshot, SessionTabSnapshot } from '../shared/session'
@@ -2055,6 +2056,7 @@ function persistSessionSnapshot(snapshot: SessionSnapshot): void {
 }
 
 const defaultAppStartupMode: AppStartupMode = 'restorePreviousSession'
+const defaultSftpBrowserOpenMode: SftpBrowserOpenMode = 'restoreLastSession'
 const defaultTerminalColorSchemeId = 'midnight-blue'
 const defaultTerminalFontFamilyId = 'JetBrains Mono Variable'
 const defaultTerminalFontWeight = '400'
@@ -2230,6 +2232,7 @@ function parsePersistedSettings(value: unknown): AppSettings | null {
   const lineHeightValue = parseSettingNumber(terminalRecord.lineHeight)
   const cursorBlinkValue = parseSettingBoolean(terminalRecord.cursorBlink)
   const startupModeValue = generalRecord?.startupMode
+  const sftpBrowserOpenModeValue = generalRecord?.sftpBrowserOpenMode
   const defaultNewTabDirectoryValue = generalRecord?.defaultNewTabDirectory
   const quickCommands = Array.isArray(record.quickCommands)
     ? (() => {
@@ -2257,6 +2260,11 @@ function parsePersistedSettings(value: unknown): AppSettings | null {
     startupModeValue === 'startClean' || startupModeValue === 'restorePreviousSession'
       ? startupModeValue
       : defaultAppStartupMode
+  const sftpBrowserOpenMode =
+    sftpBrowserOpenModeValue === 'openCurrentFolder' ||
+    sftpBrowserOpenModeValue === 'restoreLastSession'
+      ? sftpBrowserOpenModeValue
+      : defaultSftpBrowserOpenMode
   const cursorStyle =
     terminalRecord.cursorStyle === 'block' ||
     terminalRecord.cursorStyle === 'underline' ||
@@ -2268,6 +2276,7 @@ function parsePersistedSettings(value: unknown): AppSettings | null {
     general: {
       defaultNewTabDirectory:
         typeof defaultNewTabDirectoryValue === 'string' ? defaultNewTabDirectoryValue.trim() : '',
+      sftpBrowserOpenMode,
       startupMode
     },
     quickCommands,
@@ -2291,6 +2300,7 @@ function createDefaultAppSettings(): AppSettings {
   return {
     general: {
       defaultNewTabDirectory: '',
+      sftpBrowserOpenMode: defaultSftpBrowserOpenMode,
       startupMode: defaultAppStartupMode
     },
     quickCommands: [],

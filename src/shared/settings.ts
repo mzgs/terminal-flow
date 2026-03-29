@@ -1,8 +1,10 @@
 export type AppStartupMode = 'restorePreviousSession' | 'startClean'
+export type SftpBrowserOpenMode = 'restoreLastSession' | 'openCurrentFolder'
 export type TerminalCursorStyle = 'bar' | 'block' | 'underline'
 
 export interface GeneralSettings {
   defaultNewTabDirectory: string
+  sftpBrowserOpenMode: SftpBrowserOpenMode
   startupMode: AppStartupMode
 }
 

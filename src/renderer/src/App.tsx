@@ -81,6 +81,7 @@ import type {
   AppSettings,
   AppStartupMode,
   QuickCommand,
+  SftpBrowserOpenMode,
   TerminalCursorStyle
 } from '../../shared/settings'
 import type { RestorableTabState, SessionSnapshot, SessionTabSnapshot } from '../../shared/session'
@@ -1200,6 +1201,7 @@ const terminalFontFamilies = [
 const defaultTerminalFontFamilyId = 'JetBrains Mono Variable'
 const defaultTerminalFontSize = 14
 const defaultAppStartupMode: AppStartupMode = 'restorePreviousSession'
+const defaultSftpBrowserOpenMode: SftpBrowserOpenMode = 'restoreLastSession'
 const defaultTerminalCursorBlink = true
 const defaultTerminalCursorStyle: TerminalCursorStyle = 'bar'
 const defaultTerminalCursorWidth = 2
@@ -1216,6 +1218,10 @@ const terminalCursorStyleOptions: Array<{ label: string; value: TerminalCursorSt
 const appStartupModeOptions: Array<{ label: string; value: AppStartupMode }> = [
   { label: 'Restore previous session', value: 'restorePreviousSession' },
   { label: 'Start clean', value: 'startClean' }
+]
+const sftpBrowserOpenModeOptions: Array<{ label: string; value: SftpBrowserOpenMode }> = [
+  { label: 'Restore last session', value: 'restoreLastSession' },
+  { label: 'Open current folder', value: 'openCurrentFolder' }
 ]
 const terminalFontWeightOptions: TerminalFontWeightOption[] = [
   { description: 'Light', label: '300', value: '300' },
@@ -1473,6 +1479,16 @@ function normalizeAppStartupMode(startupMode: string | null | undefined): AppSta
   return defaultAppStartupMode
 }
 
+function normalizeSftpBrowserOpenMode(
+  sftpBrowserOpenMode: string | null | undefined
+): SftpBrowserOpenMode {
+  if (sftpBrowserOpenMode === 'restoreLastSession' || sftpBrowserOpenMode === 'openCurrentFolder') {
+    return sftpBrowserOpenMode
+  }
+
+  return defaultSftpBrowserOpenMode
+}
+
 function normalizeDefaultNewTabDirectory(
   defaultNewTabDirectory: string | null | undefined
 ): string {
@@ -1679,6 +1695,7 @@ function getQuickOpenCommandScore(command: QuickOpenCommandItem, query: string):
 function createAppSettings({
   defaultNewTabDirectory,
   quickCommands,
+  sftpBrowserOpenMode,
   startupMode,
   terminalColorSchemeId,
   terminalCursorBlink,
@@ -1693,6 +1710,7 @@ function createAppSettings({
 }: {
   defaultNewTabDirectory: string
   quickCommands: QuickCommand[]
+  sftpBrowserOpenMode: SftpBrowserOpenMode
   startupMode: AppStartupMode
   terminalColorSchemeId: TerminalColorSchemeId
   terminalCursorBlink: boolean
@@ -1708,6 +1726,7 @@ function createAppSettings({
   return {
     general: {
       defaultNewTabDirectory: normalizeDefaultNewTabDirectory(defaultNewTabDirectory),
+      sftpBrowserOpenMode: normalizeSftpBrowserOpenMode(sftpBrowserOpenMode),
       startupMode: normalizeAppStartupMode(startupMode)
     },
     quickCommands: normalizeQuickCommands(quickCommands),
@@ -1730,6 +1749,7 @@ function createAppSettings({
 function getNormalizedAppSettings(settings: AppSettings): {
   defaultNewTabDirectory: string
   quickCommands: QuickCommand[]
+  sftpBrowserOpenMode: SftpBrowserOpenMode
   startupMode: AppStartupMode
   terminalColorSchemeId: TerminalColorSchemeId
   terminalCursorBlink: boolean
@@ -1747,6 +1767,7 @@ function getNormalizedAppSettings(settings: AppSettings): {
       settings.general.defaultNewTabDirectory
     ),
     quickCommands: normalizeQuickCommands(settings.quickCommands),
+    sftpBrowserOpenMode: normalizeSftpBrowserOpenMode(settings.general.sftpBrowserOpenMode),
     startupMode: normalizeAppStartupMode(settings.general.startupMode),
     terminalColorSchemeId: normalizeTerminalColorSchemeId(settings.terminal.colorSchemeId),
     terminalCursorBlink:
@@ -3023,6 +3044,7 @@ interface SettingsDialogProps {
   onExportSettings: () => void
   onImportSettings: () => void
   onQuickCommandsChange: (quickCommands: QuickCommand[]) => void
+  onSftpBrowserOpenModeChange: (sftpBrowserOpenMode: SftpBrowserOpenMode) => void
   onStartupModeChange: (startupMode: AppStartupMode) => void
   onTerminalColorSchemeChange: (colorSchemeId: TerminalColorSchemeId) => void
   onTerminalCursorBlinkChange: (cursorBlink: boolean) => void
@@ -3038,6 +3060,7 @@ interface SettingsDialogProps {
   settingsTransferAction: SettingsTransferAction | null
   settingsTransferMessage: string | null
   settingsTransferTone: SettingsTransferTone
+  selectedSftpBrowserOpenMode: SftpBrowserOpenMode
   selectedStartupMode: AppStartupMode
   selectedTerminalColorSchemeId: TerminalColorSchemeId
   selectedTerminalCursorBlink: boolean
@@ -3224,6 +3247,7 @@ function GeneralSettingsPanel({
   onDefaultNewTabDirectoryChange,
   onExportSettings,
   onImportSettings,
+  onSftpBrowserOpenModeChange,
   onStartupModeChange,
   onTerminalCursorBlinkChange,
   onTerminalCursorStyleChange,
@@ -3232,6 +3256,7 @@ function GeneralSettingsPanel({
   settingsTransferAction,
   settingsTransferMessage,
   settingsTransferTone,
+  selectedSftpBrowserOpenMode,
   selectedStartupMode,
   selectedTerminalCursorBlink,
   selectedTerminalCursorStyle,
@@ -3243,6 +3268,7 @@ function GeneralSettingsPanel({
   onDefaultNewTabDirectoryChange: (defaultNewTabDirectory: string) => void
   onExportSettings: () => void
   onImportSettings: () => void
+  onSftpBrowserOpenModeChange: (sftpBrowserOpenMode: SftpBrowserOpenMode) => void
   onStartupModeChange: (startupMode: AppStartupMode) => void
   onTerminalCursorBlinkChange: (cursorBlink: boolean) => void
   onTerminalCursorStyleChange: (cursorStyle: TerminalCursorStyle) => void
@@ -3251,6 +3277,7 @@ function GeneralSettingsPanel({
   settingsTransferAction: SettingsTransferAction | null
   settingsTransferMessage: string | null
   settingsTransferTone: SettingsTransferTone
+  selectedSftpBrowserOpenMode: SftpBrowserOpenMode
   selectedStartupMode: AppStartupMode
   selectedTerminalCursorBlink: boolean
   selectedTerminalCursorStyle: TerminalCursorStyle
@@ -3374,6 +3401,35 @@ function GeneralSettingsPanel({
             <span className="settings-field-help">
               Leave blank to use the shell default. Invalid paths fall back automatically.
             </span>
+          </label>
+        </div>
+      </div>
+      <div className="settings-appearance-section">
+        <div className="settings-appearance-copy">
+          <h3 className="settings-appearance-title">SFTP browser</h3>
+          <p className="settings-color-schemes-note">
+            Choose which remote folder opens when you open the SFTP browser from an SSH tab.
+          </p>
+        </div>
+        <div className="settings-general-grid">
+          <label className="settings-field">
+            <span className="settings-field-label">Open with</span>
+            <select
+              className="settings-field-input"
+              onChange={(event) =>
+                onSftpBrowserOpenModeChange(event.target.value as SftpBrowserOpenMode)
+              }
+              value={selectedSftpBrowserOpenMode}
+            >
+              {sftpBrowserOpenModeOptions.map((sftpBrowserOpenModeOption) => (
+                <option
+                  key={sftpBrowserOpenModeOption.value}
+                  value={sftpBrowserOpenModeOption.value}
+                >
+                  {sftpBrowserOpenModeOption.label}
+                </option>
+              ))}
+            </select>
           </label>
         </div>
       </div>
@@ -4858,6 +4914,7 @@ function SettingsDialog({
   onExportSettings,
   onImportSettings,
   onQuickCommandsChange,
+  onSftpBrowserOpenModeChange,
   onStartupModeChange,
   onTerminalColorSchemeChange,
   onTerminalCursorBlinkChange,
@@ -4873,6 +4930,7 @@ function SettingsDialog({
   settingsTransferAction,
   settingsTransferMessage,
   settingsTransferTone,
+  selectedSftpBrowserOpenMode,
   selectedStartupMode,
   selectedTerminalColorSchemeId,
   selectedTerminalCursorBlink,
@@ -4977,6 +5035,7 @@ function SettingsDialog({
             onDefaultNewTabDirectoryChange={onDefaultNewTabDirectoryChange}
             onExportSettings={onExportSettings}
             onImportSettings={onImportSettings}
+            onSftpBrowserOpenModeChange={onSftpBrowserOpenModeChange}
             onStartupModeChange={onStartupModeChange}
             onTerminalCursorBlinkChange={onTerminalCursorBlinkChange}
             onTerminalCursorStyleChange={onTerminalCursorStyleChange}
@@ -4985,6 +5044,7 @@ function SettingsDialog({
             settingsTransferAction={settingsTransferAction}
             settingsTransferMessage={settingsTransferMessage}
             settingsTransferTone={settingsTransferTone}
+            selectedSftpBrowserOpenMode={selectedSftpBrowserOpenMode}
             selectedStartupMode={selectedStartupMode}
             selectedTerminalCursorBlink={selectedTerminalCursorBlink}
             selectedTerminalCursorStyle={selectedTerminalCursorStyle}
@@ -5057,6 +5117,8 @@ function TerminalApp(): React.JSX.Element {
   const [quickCommands, setQuickCommands] = useState<QuickCommand[]>([])
   const [selectedStartupMode, setSelectedStartupMode] =
     useState<AppStartupMode>(defaultAppStartupMode)
+  const [selectedSftpBrowserOpenMode, setSelectedSftpBrowserOpenMode] =
+    useState<SftpBrowserOpenMode>(defaultSftpBrowserOpenMode)
   const [selectedTerminalColorSchemeId, setSelectedTerminalColorSchemeId] =
     useState<TerminalColorSchemeId>(defaultTerminalColorScheme.id)
   const [selectedTerminalCursorBlink, setSelectedTerminalCursorBlink] = useState(
@@ -5148,6 +5210,7 @@ function TerminalApp(): React.JSX.Element {
 
     setDefaultNewTabDirectory(normalizedSettings.defaultNewTabDirectory)
     setQuickCommands(normalizedSettings.quickCommands)
+    setSelectedSftpBrowserOpenMode(normalizedSettings.sftpBrowserOpenMode)
     setSelectedStartupMode(normalizedSettings.startupMode)
     setSelectedTerminalColorSchemeId(normalizedSettings.terminalColorSchemeId)
     setSelectedTerminalCursorBlink(normalizedSettings.terminalCursorBlink)
@@ -6487,6 +6550,7 @@ function TerminalApp(): React.JSX.Element {
         createAppSettings({
           defaultNewTabDirectory,
           quickCommands,
+          sftpBrowserOpenMode: selectedSftpBrowserOpenMode,
           startupMode: selectedStartupMode,
           terminalColorSchemeId: selectedTerminalColorSchemeId,
           terminalCursorBlink: selectedTerminalCursorBlink,
@@ -6507,6 +6571,7 @@ function TerminalApp(): React.JSX.Element {
     defaultNewTabDirectory,
     hasHydratedSettings,
     quickCommands,
+    selectedSftpBrowserOpenMode,
     selectedStartupMode,
     selectedTerminalColorSchemeId,
     selectedTerminalCursorBlink,
@@ -7519,6 +7584,10 @@ function TerminalApp(): React.JSX.Element {
     activeTab?.restoreState.kind === 'ssh' ? (activeTab.restoreState.cwd ?? null) : null
   const activeSshBrowserPath =
     activeTab?.restoreState.kind === 'ssh' ? (activeTab.restoreState.browserPath ?? null) : null
+  const preferredSshBrowserOpenPath =
+    selectedSftpBrowserOpenMode === 'openCurrentFolder'
+      ? (activeSshCwd ?? activeSshBrowserPath ?? null)
+      : (activeSshBrowserPath ?? activeSshCwd ?? null)
   const activeSshTabId = activeTab?.restoreState.kind === 'ssh' ? activeTab.id : null
   const activeSshBrowserState = activeTabId ? (sshBrowserStates[activeTabId] ?? null) : null
   const activeSshBrowserId = activeSshBrowserState
@@ -7546,8 +7615,7 @@ function TerminalApp(): React.JSX.Element {
       selectedTerminalTheme.background ?? defaultTerminalTheme.background ?? '#000000',
     ...(activeSshBrowserState ? { '--ssh-browser-width': `${activeSshBrowserWidth}px` } : {})
   } as CSSProperties
-  const openCurrentFolderPath =
-    activeSshBrowserState?.path ?? activeSshBrowserPath ?? activeSshCwd ?? null
+  const openCurrentFolderPath = activeSshBrowserState?.path ?? preferredSshBrowserOpenPath
   const openCurrentFolderTitle = activeSshConfigId
     ? openCurrentFolderPath
       ? `Browse ${openCurrentFolderPath}`
@@ -7555,6 +7623,11 @@ function TerminalApp(): React.JSX.Element {
     : activeLocalTabCwd
       ? `Open ${activeLocalTabCwd}`
       : 'Current folder is not available yet'
+  const openCurrentFolderAriaLabel = activeSshConfigId
+    ? activeSshBrowserState
+      ? 'Close SFTP browser'
+      : 'Open SFTP browser'
+    : 'Open current folder'
   const primaryModifierLabel = platformClassName === 'platform-macos' ? 'Cmd' : 'Ctrl'
   const sshServersById = useMemo(
     () => new Map(sshServers.map((server) => [server.id, server])),
@@ -8870,7 +8943,7 @@ function TerminalApp(): React.JSX.Element {
             aria-controls={activeSshConfigId ? activeSshBrowserId : undefined}
             aria-expanded={activeSshConfigId ? Boolean(activeSshBrowserState) : undefined}
             aria-haspopup={activeSshConfigId ? 'dialog' : undefined}
-            aria-label="Open current folder"
+            aria-label={openCurrentFolderAriaLabel}
             className={`tab-action${activeSshBrowserState ? ' is-open' : ''}`}
             disabled={!activeLocalTabCwd && !activeSshConfigId}
             onClick={handleOpenCurrentFolder}
@@ -9218,8 +9291,8 @@ function TerminalApp(): React.JSX.Element {
                 : isNavigatingToDirectory
                   ? 'Opening folder...'
                   : browserState.isLoading
-                  ? 'Refreshing remote directory...'
-                  : null
+                    ? 'Refreshing remote directory...'
+                    : null
               const isActiveBrowser = browserState.tabId === activeSshBrowserState?.tabId
 
               return (
@@ -9703,6 +9776,7 @@ function TerminalApp(): React.JSX.Element {
           onExportSettings={handleExportSettings}
           onImportSettings={handleImportSettings}
           onQuickCommandsChange={setQuickCommands}
+          onSftpBrowserOpenModeChange={setSelectedSftpBrowserOpenMode}
           onStartupModeChange={setSelectedStartupMode}
           onTerminalColorSchemeChange={setSelectedTerminalColorSchemeId}
           onTerminalCursorBlinkChange={setSelectedTerminalCursorBlink}
@@ -9718,6 +9792,7 @@ function TerminalApp(): React.JSX.Element {
           settingsTransferAction={settingsTransferAction}
           settingsTransferMessage={settingsTransferMessage}
           settingsTransferTone={settingsTransferTone}
+          selectedSftpBrowserOpenMode={selectedSftpBrowserOpenMode}
           selectedStartupMode={selectedStartupMode}
           selectedTerminalColorSchemeId={selectedTerminalColorSchemeId}
           selectedTerminalCursorBlink={selectedTerminalCursorBlink}
