@@ -447,7 +447,16 @@ body {
   white-space: nowrap;
   color: rgba(181, 198, 220, 0.62);
   font-size: 10px;
-  line-height: 1;
+  line-height: 1.2;
+  font-family:
+    ui-monospace,
+    'SFMono-Regular',
+    'SF Mono',
+    Menlo,
+    Monaco,
+    Consolas,
+    'Liberation Mono',
+    monospace;
 }
 
 .ssh-browser-close {
@@ -595,14 +604,13 @@ body {
   overflow: hidden;
 }
 
-.ssh-browser-statusbar {
+.ssh-browser-list-header {
   display: flex;
   align-items: center;
   min-width: 0;
-  min-height: 22px;
-  padding: 0 10px;
-  border-radius: 6px;
-  background: rgba(9, 14, 22, 0.72);
+  padding: 8px 10px 7px;
+  border-bottom: 1px solid rgba(119, 215, 255, 0.08);
+  background: rgba(12, 18, 28, 0.76);
 }
 
 .ssh-browser-section-note {
@@ -624,6 +632,7 @@ body {
 
 .ssh-browser-list-shell {
   display: flex;
+  flex-direction: column;
   flex: 1 1 auto;
   min-height: 0;
   overflow: hidden;
@@ -1169,7 +1178,7 @@ body {
   position: absolute;
   inset: 0;
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  grid-template-rows: auto auto minmax(0, 1fr);
   gap: 18px;
   min-width: 0;
   min-height: 0;

@@ -9345,6 +9345,14 @@ function TerminalApp(): React.JSX.Element {
                       className={`ssh-browser-list-shell${browserState.isLoading ? ' is-loading' : ''}`}
                     >
                       <div
+                        className="ssh-browser-list-header"
+                        title={browserDisplayPath ?? 'Remote path unavailable'}
+                      >
+                        <p className="ssh-browser-path">
+                          {browserDisplayPath ?? 'Remote path unavailable'}
+                        </p>
+                      </div>
+                      <div
                         className="ssh-browser-list"
                         ref={(node) => {
                           if (!node) {
@@ -9442,14 +9450,6 @@ function TerminalApp(): React.JSX.Element {
                         })}
                       </div>
                     </div>
-                  </div>
-                  <div
-                    className="ssh-browser-statusbar"
-                    title={browserDisplayPath ?? 'Remote path unavailable'}
-                  >
-                    <p className="ssh-browser-path">
-                      {browserDisplayPath ?? 'Remote path unavailable'}
-                    </p>
                   </div>
                 </aside>
               )
