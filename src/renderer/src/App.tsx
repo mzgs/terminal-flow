@@ -7255,6 +7255,10 @@ function TerminalApp(): React.JSX.Element {
       ? `Open ${activeLocalTabCwd}`
       : 'Current folder is not available yet'
   const primaryModifierLabel = platformClassName === 'platform-macos' ? 'Cmd' : 'Ctrl'
+  const sshServersById = useMemo(
+    () => new Map(sshServers.map((server) => [server.id, server])),
+    [sshServers]
+  )
   const sortedSshServers = [...sshServers].sort((left, right) => {
     const nameDifference = left.name.localeCompare(right.name, undefined, { sensitivity: 'base' })
 
@@ -8745,9 +8749,26 @@ function TerminalApp(): React.JSX.Element {
               }
 
               const browserId = `ssh-browser-${tab.id}`
+              const sshServer = sshServersById.get(browserState.configId) ?? null
               const browserParentPath = browserState.path
                 ? getRemoteDirectoryParentPath(browserState.path)
                 : null
+              const browserDirectoryCount = browserState.entries.filter(
+                (entry) => entry.isDirectory
+              ).length
+              const browserFileCount = browserState.entries.length - browserDirectoryCount
+              const browserItemCountLabel = `${browserState.entries.length} item${
+                browserState.entries.length === 1 ? '' : 's'
+              }`
+              const browserFolderCountLabel = `${browserDirectoryCount} folder${
+                browserDirectoryCount === 1 ? '' : 's'
+              }`
+              const browserFileCountLabel = `${browserFileCount} file${
+                browserFileCount === 1 ? '' : 's'
+              }`
+              const browserServerTarget = sshServer
+                ? formatSshTarget(sshServer)
+                : 'Remote workspace'
               const isActiveBrowser = browserState.tabId === activeSshBrowserState?.tabId
 
               return (
@@ -8760,13 +8781,23 @@ function TerminalApp(): React.JSX.Element {
                 >
                   <div className="ssh-browser-header">
                     <div className="ssh-browser-heading">
-                      <span className="ssh-browser-eyebrow">SFTP Browser</span>
-                      <span
-                        className="ssh-browser-path"
-                        title={browserState.path ?? 'Loading path'}
-                      >
-                        {browserState.path ?? 'Loading path...'}
-                      </span>
+                      <div className="ssh-browser-title-row">
+                        <SshServerIconGlyph
+                          className="ssh-browser-server-icon"
+                          icon={sshServer?.icon}
+                        />
+                        <div className="ssh-browser-title-copy">
+                          <h2 className="ssh-browser-title">SFTP Browser</h2>
+                          <p className="ssh-browser-description">
+                            {sshServer ? sshServer.name : 'Remote workspace'}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="ssh-browser-stats">
+                        <span className="ssh-browser-stat">{browserFolderCountLabel}</span>
+                        <span className="ssh-browser-stat">{browserFileCountLabel}</span>
+                        <span className="ssh-browser-stat">{browserItemCountLabel}</span>
+                      </div>
                     </div>
                     <button
                       aria-label="Close remote browser"
@@ -8778,81 +8809,123 @@ function TerminalApp(): React.JSX.Element {
                     </button>
                   </div>
                   <div className="ssh-browser-toolbar">
-                    <button
-                      className="ssh-browser-toolbar-button"
-                      disabled={!browserParentPath || browserState.isLoading}
-                      onClick={() => handleOpenSshBrowserParent(browserState)}
-                      type="button"
-                    >
-                      Up
-                    </button>
-                    <button
-                      className="ssh-browser-toolbar-button"
-                      disabled={browserState.isLoading}
-                      onClick={() => handleRefreshSshBrowser(browserState)}
-                      type="button"
-                    >
-                      {browserState.isLoading ? 'Loading...' : 'Refresh'}
-                    </button>
+                    <div className="ssh-browser-location">
+                      <span className="ssh-browser-location-label">Path</span>
+                      <span
+                        className="ssh-browser-path"
+                        title={browserState.path ?? 'Loading path'}
+                      >
+                        {browserState.path ?? 'Loading path...'}
+                      </span>
+                      <span className="ssh-browser-location-meta">{browserServerTarget}</span>
+                    </div>
+                    <div className="ssh-browser-toolbar-actions">
+                      <button
+                        className="ssh-browser-toolbar-button"
+                        disabled={!browserParentPath || browserState.isLoading}
+                        onClick={() => handleOpenSshBrowserParent(browserState)}
+                        type="button"
+                      >
+                        Up
+                      </button>
+                      <button
+                        className="ssh-browser-toolbar-button"
+                        disabled={browserState.isLoading}
+                        onClick={() => handleRefreshSshBrowser(browserState)}
+                        type="button"
+                      >
+                        {browserState.isLoading ? 'Loading...' : 'Refresh'}
+                      </button>
+                    </div>
                   </div>
-                  {browserState.errorMessage ? (
-                    <p className="ssh-browser-error">{browserState.errorMessage}</p>
-                  ) : null}
-                  <div className="ssh-browser-list">
-                    {!browserState.errorMessage && browserState.entries.length === 0 ? (
-                      <div className="ssh-browser-empty">
-                        {browserState.isLoading
-                          ? 'Loading remote files...'
-                          : 'This folder is empty.'}
+                  <div className="ssh-browser-section">
+                    <div className="ssh-browser-section-header">
+                      <div className="ssh-browser-section-copy">
+                        <h3 className="ssh-browser-section-title">Contents</h3>
+                        <p className="ssh-browser-section-note">
+                          {browserState.errorMessage
+                            ? 'The directory listing could not be loaded.'
+                            : browserState.isLoading
+                              ? 'Refreshing remote directory...'
+                              : browserItemCountLabel}
+                        </p>
                       </div>
+                    </div>
+                    {browserState.errorMessage ? (
+                      <p className="ssh-browser-error">{browserState.errorMessage}</p>
                     ) : null}
-                    {browserState.entries.map((entry) => {
-                      if (entry.isDirectory) {
-                        return (
-                          <button
-                            className="ssh-browser-entry is-directory"
-                            key={`dir-${entry.name}`}
-                            onContextMenu={(event) =>
-                              handleOpenSshBrowserContextMenu(event, browserState, entry)
-                            }
-                            onClick={() => handleOpenSshBrowserDirectory(browserState, entry)}
-                            type="button"
-                          >
-                            <span className="ssh-browser-entry-main">
-                              <Folder
-                                aria-hidden="true"
-                                className="ssh-browser-entry-icon ssh-browser-entry-icon-directory"
-                              />
-                              <span className="ssh-browser-entry-name">{entry.name}</span>
-                            </span>
-                          </button>
-                        )
-                      }
-
-                      const fileIconDescriptor = getSshBrowserFileIconDescriptor(entry.name)
-                      const FileIcon = fileIconDescriptor.icon
-                      const canOpenInEditor = canEditSshRemoteFile(entry)
-
-                      return (
-                        <div
-                          className={`ssh-browser-entry${canOpenInEditor ? ' is-editable' : ''}`}
-                          key={`file-${entry.name}`}
-                          onDoubleClick={() => handleOpenSshRemoteFile(browserState, entry)}
-                          onContextMenu={(event) =>
-                            handleOpenSshBrowserContextMenu(event, browserState, entry)
+                    <div className="ssh-browser-list-shell">
+                      <div className="ssh-browser-list">
+                        {!browserState.errorMessage && browserState.entries.length === 0 ? (
+                          <div className="ssh-browser-empty">
+                            {browserState.isLoading
+                              ? 'Loading remote files...'
+                              : 'This folder is empty.'}
+                          </div>
+                        ) : null}
+                        {browserState.entries.map((entry) => {
+                          if (entry.isDirectory) {
+                            return (
+                              <button
+                                className="ssh-browser-entry is-directory"
+                                key={`dir-${entry.name}`}
+                                onContextMenu={(event) =>
+                                  handleOpenSshBrowserContextMenu(event, browserState, entry)
+                                }
+                                onClick={() => handleOpenSshBrowserDirectory(browserState, entry)}
+                                type="button"
+                              >
+                                <span className="ssh-browser-entry-main">
+                                  <Folder
+                                    aria-hidden="true"
+                                    className="ssh-browser-entry-icon ssh-browser-entry-icon-directory"
+                                  />
+                                  <span className="ssh-browser-entry-copy">
+                                    <span className="ssh-browser-entry-name">{entry.name}</span>
+                                    <span className="ssh-browser-entry-meta">Directory</span>
+                                  </span>
+                                </span>
+                                <span className="ssh-browser-entry-hint">Open</span>
+                              </button>
+                            )
                           }
-                          title={canOpenInEditor ? 'Double-click to open in the editor' : undefined}
-                        >
-                          <span className="ssh-browser-entry-main">
-                            <FileIcon
-                              aria-hidden="true"
-                              className={`ssh-browser-entry-icon ${fileIconDescriptor.toneClassName}`}
-                            />
-                            <span className="ssh-browser-entry-name">{entry.name}</span>
-                          </span>
-                        </div>
-                      )
-                    })}
+
+                          const fileIconDescriptor = getSshBrowserFileIconDescriptor(entry.name)
+                          const FileIcon = fileIconDescriptor.icon
+                          const canOpenInEditor = canEditSshRemoteFile(entry)
+
+                          return (
+                            <div
+                              className={`ssh-browser-entry${canOpenInEditor ? ' is-editable' : ''}`}
+                              key={`file-${entry.name}`}
+                              onDoubleClick={() => handleOpenSshRemoteFile(browserState, entry)}
+                              onContextMenu={(event) =>
+                                handleOpenSshBrowserContextMenu(event, browserState, entry)
+                              }
+                              title={
+                                canOpenInEditor ? 'Double-click to open in the editor' : undefined
+                              }
+                            >
+                              <span className="ssh-browser-entry-main">
+                                <FileIcon
+                                  aria-hidden="true"
+                                  className={`ssh-browser-entry-icon ${fileIconDescriptor.toneClassName}`}
+                                />
+                                <span className="ssh-browser-entry-copy">
+                                  <span className="ssh-browser-entry-name">{entry.name}</span>
+                                  <span className="ssh-browser-entry-meta">
+                                    {canOpenInEditor ? 'Double-click to edit' : 'File'}
+                                  </span>
+                                </span>
+                              </span>
+                              <span className="ssh-browser-entry-hint">
+                                {canOpenInEditor ? 'Edit' : 'File'}
+                              </span>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
                   </div>
                 </aside>
               )

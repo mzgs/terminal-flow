@@ -393,29 +393,70 @@ body {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 12px;
+  gap: 16px;
 }
 
 .ssh-browser-heading {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.ssh-browser-title-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  min-width: 0;
+}
+
+.ssh-browser-server-icon {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  border-radius: 4px;
+  object-fit: contain;
+}
+
+.ssh-browser-title-copy {
   display: grid;
   gap: 4px;
   min-width: 0;
 }
 
-.ssh-browser-eyebrow {
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: rgba(123, 242, 176, 0.86);
+.ssh-browser-title {
+  color: var(--color-text);
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.ssh-browser-description {
+  color: var(--color-text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.ssh-browser-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+
+.ssh-browser-stat {
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.4;
 }
 
 .ssh-browser-path {
   overflow: hidden;
-  color: #f5fbff;
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 1.35;
+  color: var(--color-text);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.4;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -423,114 +464,224 @@ body {
 .ssh-browser-close {
   display: inline-grid;
   place-items: center;
-  width: 28px;
-  height: 28px;
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
   padding: 0;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(119, 215, 255, 0.14);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.04);
-  color: rgba(217, 230, 248, 0.78);
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--color-text-muted);
   cursor: pointer;
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease,
+    color 160ms ease;
 }
 
 .ssh-browser-close:hover,
 .ssh-browser-close:focus-visible {
-  border-color: rgba(119, 215, 255, 0.2);
-  background: rgba(255, 255, 255, 0.08);
-  color: #f5fbff;
+  border-color: rgba(119, 215, 255, 0.24);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--color-text);
   outline: none;
 }
 
 .ssh-browser-close-icon {
   width: 14px;
   height: 14px;
-  stroke-width: 2.1;
+  stroke-width: 2.2;
 }
 
 .ssh-browser-toolbar {
+  display: grid;
+  gap: 12px;
+}
+
+.ssh-browser-location {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(119, 215, 255, 0.14);
+  border-radius: 8px;
+  background: rgba(9, 14, 22, 0.72);
+}
+
+.ssh-browser-location-label {
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.ssh-browser-location-meta {
+  color: var(--color-text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.ssh-browser-toolbar-actions {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  flex-wrap: wrap;
+  gap: 10px;
 }
 
 .ssh-browser-toolbar-button {
-  min-width: 78px;
-  padding: 7px 11px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.04);
-  color: #f5fbff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 88px;
+  height: 38px;
+  padding: 0 14px;
+  border: 1px solid rgba(119, 215, 255, 0.14);
+  border-radius: 8px;
+  background: rgba(9, 14, 22, 0.72);
+  color: var(--color-text);
   cursor: pointer;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
+  line-height: 1;
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease,
+    color 160ms ease,
+    opacity 160ms ease;
 }
 
 .ssh-browser-toolbar-button:hover:not(:disabled),
 .ssh-browser-toolbar-button:focus-visible {
-  border-color: rgba(119, 215, 255, 0.2);
-  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(119, 215, 255, 0.3);
+  background: rgba(12, 18, 28, 0.92);
   outline: none;
 }
 
 .ssh-browser-toolbar-button:disabled {
-  cursor: default;
-  opacity: 0.5;
+  opacity: 0.58;
+  cursor: wait;
+}
+
+.ssh-browser-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.ssh-browser-section-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid rgba(119, 215, 255, 0.12);
+}
+
+.ssh-browser-section-copy {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.ssh-browser-section-title {
+  color: var(--color-text);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.ssh-browser-section-note {
+  color: var(--color-text-muted);
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .ssh-browser-error {
   margin: 0;
-  color: #ffb3ad;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 141, 137, 0.18);
+  border-radius: 8px;
+  background: rgba(255, 141, 137, 0.08);
+  color: var(--color-danger);
   font-size: 12px;
-  line-height: 1.4;
+  line-height: 1.5;
+}
+
+.ssh-browser-list-shell {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid rgba(119, 215, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(9, 14, 22, 0.52);
 }
 
 .ssh-browser-list {
   display: grid;
-  gap: 4px;
+  flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
-  padding-right: 2px;
 }
 
 .ssh-browser-entry {
   display: flex;
   align-items: center;
-  justify-content: flex-start;
+  justify-content: space-between;
   gap: 12px;
+  width: 100%;
   min-width: 0;
-  padding: 10px 12px;
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.03);
-  cursor: pointer;
+  padding: 12px 14px;
+  border: 0;
+  border-bottom: 1px solid rgba(119, 215, 255, 0.12);
+  background: transparent;
+  color: inherit;
+  transition:
+    background-color 160ms ease,
+    color 160ms ease;
+}
+
+.ssh-browser-entry:last-child {
+  border-bottom: 0;
 }
 
 .ssh-browser-entry.is-directory {
-  width: 100%;
-  color: inherit;
   cursor: pointer;
   text-align: left;
+}
+
+.ssh-browser-entry.is-editable {
+  cursor: default;
 }
 
 .ssh-browser-entry:hover,
 .ssh-browser-entry.is-directory:hover,
 .ssh-browser-entry.is-directory:focus-visible {
-  border-color: rgba(119, 215, 255, 0.18);
-  background: rgba(119, 215, 255, 0.09);
+  background: rgba(255, 255, 255, 0.04);
   outline: none;
 }
 
 .ssh-browser-entry-main {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   min-width: 0;
   flex: 1 1 auto;
 }
 
+.ssh-browser-entry-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
 .ssh-browser-entry-icon {
-  width: 15px;
-  height: 15px;
+  width: 16px;
+  height: 16px;
   stroke-width: 2;
   flex: 0 0 auto;
 }
@@ -580,22 +731,35 @@ body {
 }
 
 .ssh-browser-entry-name {
-  color: #f5fbff;
-  font-size: 12px;
-  font-weight: 600;
+  color: var(--color-text);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.35;
 }
 
 .ssh-browser-entry-meta {
-  color: rgba(181, 198, 220, 0.72);
+  color: var(--color-text-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.ssh-browser-entry-hint {
+  flex: 0 0 auto;
+  color: var(--color-text-muted);
   font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.ssh-browser-entry.is-editable .ssh-browser-entry-hint {
+  color: rgba(119, 215, 255, 0.78);
 }
 
 .ssh-browser-empty {
-  padding: 14px 12px;
-  border: 1px dashed rgba(119, 215, 255, 0.14);
-  border-radius: 10px;
-  color: rgba(181, 198, 220, 0.72);
+  padding: 20px 16px;
+  color: var(--color-text-muted);
   font-size: 12px;
+  line-height: 1.5;
   text-align: center;
 }
 
@@ -603,12 +767,13 @@ body {
   position: fixed;
   z-index: 40;
   display: grid;
+  gap: 0;
   min-width: 184px;
-  padding: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 12px;
-  background: rgba(8, 12, 18, 0.98);
-  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.42);
+  padding: 4px;
+  border: 1px solid rgba(119, 215, 255, 0.12);
+  border-radius: 10px;
+  background: #0c121c;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
   -webkit-app-region: no-drag;
 }
 
@@ -621,7 +786,7 @@ body {
   border: 0;
   border-radius: 8px;
   background: transparent;
-  color: #f5fbff;
+  color: var(--color-text);
   cursor: pointer;
   font-size: 13px;
   font-weight: 500;
@@ -630,17 +795,17 @@ body {
 
 .ssh-browser-context-menu-item:hover,
 .ssh-browser-context-menu-item:focus-visible {
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.05);
   outline: none;
 }
 
 .ssh-browser-context-menu-item.is-danger {
-  color: #ffb3ad;
+  color: var(--color-danger);
 }
 
 .ssh-browser-context-menu-item.is-danger:hover,
 .ssh-browser-context-menu-item.is-danger:focus-visible {
-  background: rgba(255, 98, 90, 0.12);
+  background: rgba(255, 141, 137, 0.12);
 }
 
 .ssh-browser-context-menu-icon {
@@ -968,15 +1133,14 @@ body {
   position: absolute;
   inset: 0;
   display: grid;
-  grid-template-rows: auto auto auto minmax(0, 1fr);
-  gap: 12px;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: 18px;
   min-width: 0;
   min-height: 0;
-  padding: 16px 14px 14px;
-  border-left: 1px solid rgba(119, 215, 255, 0.14);
-  background:
-    linear-gradient(180deg, rgba(10, 16, 25, 0.98), rgba(5, 8, 13, 0.98)), rgba(8, 12, 18, 0.98);
-  box-shadow: -18px 0 36px rgba(0, 0, 0, 0.24);
+  padding: 20px 18px 18px;
+  border-left: 1px solid rgba(119, 215, 255, 0.12);
+  background: #0c121c;
+  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.22);
   overflow: hidden;
   visibility: hidden;
   pointer-events: none;
@@ -1143,8 +1307,8 @@ body {
     left: auto;
     width: min(var(--ssh-browser-width, 340px), calc(100vw - 24px));
     border: 1px solid rgba(119, 215, 255, 0.14);
-    border-radius: 16px;
-    box-shadow: 0 22px 44px rgba(0, 0, 0, 0.42);
+    border-radius: 10px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
   }
 }
 
