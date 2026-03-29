@@ -413,6 +413,7 @@ body {
   width: 18px;
   height: 18px;
   flex: 0 0 auto;
+  margin-top: 2px;
   border-radius: 4px;
   object-fit: contain;
 }
@@ -539,28 +540,6 @@ body {
   flex: 1 1 auto;
   min-height: 0;
   overflow: hidden;
-}
-
-.ssh-browser-section-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-  padding-bottom: 4px;
-  border-bottom: 1px solid rgba(119, 215, 255, 0.12);
-}
-
-.ssh-browser-section-copy {
-  display: grid;
-  gap: 4px;
-  min-width: 0;
-}
-
-.ssh-browser-section-title {
-  color: var(--color-text);
-  font-size: 13px;
-  font-weight: 700;
-  line-height: 1.4;
 }
 
 .ssh-browser-section-note {
@@ -1084,7 +1063,7 @@ body {
   gap: 18px;
   min-width: 0;
   min-height: 0;
-  padding: 20px 18px 18px;
+  padding: 16px 12px 14px;
   border-left: 1px solid rgba(119, 215, 255, 0.12);
   background: #0c121c;
   box-shadow: -8px 0 24px rgba(0, 0, 0, 0.22);
@@ -1516,6 +1495,160 @@ body {
   place-items: center;
   padding: 24px;
   background: rgba(5, 10, 16, 0.82);
+}
+
+.ssh-browser-create-dialog {
+  width: min(420px, 100%);
+  border: 1px solid rgba(119, 215, 255, 0.16);
+  border-radius: 10px;
+  background: #0c121c;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+  outline: none;
+  overflow: hidden;
+}
+
+.ssh-browser-create-form {
+  display: grid;
+  gap: 18px;
+  padding: 22px;
+}
+
+.ssh-browser-create-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid rgba(119, 215, 255, 0.12);
+}
+
+.ssh-browser-create-copy {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.ssh-browser-create-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.ssh-browser-create-title-icon {
+  width: 16px;
+  height: 16px;
+  color: rgba(119, 215, 255, 0.82);
+  flex: 0 0 auto;
+}
+
+.ssh-browser-create-title {
+  color: var(--color-text);
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.ssh-browser-create-path {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.ssh-browser-create-dismiss {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid rgba(119, 215, 255, 0.14);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.02);
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease,
+    color 160ms ease;
+}
+
+.ssh-browser-create-dismiss:hover,
+.ssh-browser-create-dismiss:focus-visible {
+  border-color: rgba(119, 215, 255, 0.24);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--color-text);
+  outline: none;
+}
+
+.ssh-browser-create-dismiss-icon {
+  width: 14px;
+  height: 14px;
+  stroke-width: 2.2;
+}
+
+.ssh-browser-create-body {
+  display: grid;
+  gap: 12px;
+}
+
+.ssh-browser-create-error {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 141, 137, 0.18);
+  border-radius: 8px;
+  background: rgba(255, 141, 137, 0.08);
+  color: var(--color-danger);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.ssh-browser-create-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.ssh-browser-create-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 96px;
+  height: 38px;
+  padding: 0 14px;
+  border: 1px solid rgba(119, 215, 255, 0.14);
+  border-radius: 8px;
+  background: rgba(9, 14, 22, 0.72);
+  color: var(--color-text);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease,
+    color 160ms ease;
+}
+
+.ssh-browser-create-button:hover,
+.ssh-browser-create-button:focus-visible {
+  border-color: rgba(119, 215, 255, 0.3);
+  background: rgba(12, 18, 28, 0.92);
+  outline: none;
+}
+
+.ssh-browser-create-button.is-primary {
+  border-color: rgba(119, 215, 255, 0.34);
+  background: rgba(119, 215, 255, 0.2);
+}
+
+.ssh-browser-create-button.is-primary:hover,
+.ssh-browser-create-button.is-primary:focus-visible {
+  border-color: rgba(119, 215, 255, 0.42);
+  background: rgba(119, 215, 255, 0.28);
 }
 
 .remote-editor-dialog {

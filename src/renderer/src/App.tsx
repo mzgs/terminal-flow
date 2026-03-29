@@ -30,6 +30,7 @@ import CodeMirror from '@uiw/react-codemirror'
 import { FitAddon } from '@xterm/addon-fit'
 import { Terminal, type IBufferCell, type ITheme } from '@xterm/xterm'
 import {
+  ArrowUp,
   BrushCleaning,
   CirclePlus,
   Check,
@@ -43,11 +44,13 @@ import {
   FileCode,
   FileImage,
   FileMusic,
+  FilePlus,
   FileTerminal,
   FileText,
   FileVideoCamera,
   Folder,
   FolderOpen,
+  FolderPlus,
   Palette,
   Pencil,
   Plus,
@@ -153,6 +156,13 @@ interface SshBrowserContextMenuState {
   tabId: string
   x: number
   y: number
+}
+
+interface SshBrowserCreateDialogState {
+  errorMessage: string | null
+  isDirectory: boolean
+  name: string
+  tabId: string
 }
 
 type SshRemoteEditorLineEnding = '\n' | '\r' | '\r\n'
@@ -2496,6 +2506,22 @@ function getRemoteDirectoryParentPath(path: string): string | null {
   return normalizedPath.slice(0, lastSlashIndex)
 }
 
+function getSshBrowserEntryNameError(name: string): string | null {
+  if (name === '') {
+    return 'Enter a name before continuing.'
+  }
+
+  if (name === '.' || name === '..') {
+    return 'Remote entry names cannot be "." or "..".'
+  }
+
+  if (name.includes('/')) {
+    return 'Remote entry names cannot include "/".'
+  }
+
+  return null
+}
+
 function clampSshBrowserWidth(desiredWidth: number, workspaceWidth: number): number {
   const maxWidth = Math.min(
     maxSshBrowserWidth,
@@ -4471,6 +4497,14 @@ interface SshRemoteEditorLoadingDialogProps {
   loadingState: SshRemoteEditorLoadingState
 }
 
+interface SshBrowserCreateDialogProps {
+  browserState: SshBrowserState
+  draftState: SshBrowserCreateDialogState
+  onChangeName: (name: string) => void
+  onClose: () => void
+  onSubmit: () => void
+}
+
 function SshRemoteEditorLoadingDialog({
   loadingState
 }: SshRemoteEditorLoadingDialogProps): React.JSX.Element {
@@ -4494,6 +4528,94 @@ function SshRemoteEditorLoadingDialog({
           </p>
         </div>
       </div>
+    </Modal>
+  )
+}
+
+function SshBrowserCreateDialog({
+  browserState,
+  draftState,
+  onChangeName,
+  onClose,
+  onSubmit
+}: SshBrowserCreateDialogProps): React.JSX.Element {
+  const titleId = useId()
+  const pathId = `${titleId}-path`
+  const DialogIcon = draftState.isDirectory ? FolderPlus : FilePlus
+  const dialogTitle = draftState.isDirectory ? 'New folder' : 'New file'
+  const submitLabel = draftState.isDirectory ? 'Create folder' : 'Create file'
+
+  const handleSubmit = useCallback(
+    (event: React.FormEvent<HTMLFormElement>): void => {
+      event.preventDefault()
+      onSubmit()
+    },
+    [onSubmit]
+  )
+
+  return (
+    <Modal
+      appElement={document.getElementById('root') ?? undefined}
+      aria={{
+        describedby: pathId,
+        labelledby: titleId
+      }}
+      bodyOpenClassName="ssh-config-modal-open"
+      className="ssh-browser-create-dialog"
+      contentLabel={dialogTitle}
+      isOpen
+      onRequestClose={onClose}
+      overlayClassName="remote-editor-dialog-shell"
+      shouldCloseOnEsc
+      shouldCloseOnOverlayClick
+    >
+      <form className="ssh-browser-create-form" onSubmit={handleSubmit}>
+        <div className="ssh-browser-create-header">
+          <div className="ssh-browser-create-copy">
+            <div className="ssh-browser-create-title-row">
+              <DialogIcon aria-hidden="true" className="ssh-browser-create-title-icon" />
+              <h2 className="ssh-browser-create-title" id={titleId}>
+                {dialogTitle}
+              </h2>
+            </div>
+            <p className="ssh-browser-create-path" id={pathId} title={browserState.path ?? ''}>
+              {browserState.path ?? 'Remote folder unavailable'}
+            </p>
+          </div>
+          <button
+            aria-label="Close create dialog"
+            className="ssh-browser-create-dismiss"
+            onClick={onClose}
+            type="button"
+          >
+            <X aria-hidden="true" className="ssh-browser-create-dismiss-icon" />
+          </button>
+        </div>
+        <div className="ssh-browser-create-body">
+          <label className="settings-field">
+            <span className="settings-field-label">Name</span>
+            <input
+              autoFocus
+              className="settings-field-input"
+              onChange={(event) => onChangeName(event.target.value)}
+              placeholder={draftState.isDirectory ? 'logs' : 'notes.txt'}
+              type="text"
+              value={draftState.name}
+            />
+          </label>
+          {draftState.errorMessage ? (
+            <p className="ssh-browser-create-error">{draftState.errorMessage}</p>
+          ) : null}
+        </div>
+        <div className="ssh-browser-create-actions">
+          <button className="ssh-browser-create-button" onClick={onClose} type="button">
+            Cancel
+          </button>
+          <button className="ssh-browser-create-button is-primary" type="submit">
+            {submitLabel}
+          </button>
+        </div>
+      </form>
     </Modal>
   )
 }
@@ -4825,6 +4947,8 @@ function TerminalApp(): React.JSX.Element {
   )
   const [sshBrowserContextMenu, setSshBrowserContextMenu] =
     useState<SshBrowserContextMenuState | null>(null)
+  const [sshBrowserCreateDialogState, setSshBrowserCreateDialogState] =
+    useState<SshBrowserCreateDialogState | null>(null)
   const [sshDownloadProgress, setSshDownloadProgress] = useState<SshDownloadProgressEvent | null>(
     null
   )
@@ -5102,6 +5226,10 @@ function TerminalApp(): React.JSX.Element {
 
   const closeSshBrowserContextMenu = useCallback((): void => {
     setSshBrowserContextMenu(null)
+  }, [])
+
+  const closeSshBrowserCreateDialog = useCallback((): void => {
+    setSshBrowserCreateDialogState(null)
   }, [])
 
   const closeTerminalContextMenu = useCallback((): void => {
@@ -6909,6 +7037,19 @@ function TerminalApp(): React.JSX.Element {
   }, [activeTabId, closeSshBrowserContextMenu, sshBrowserContextMenu, sshBrowserStates])
 
   useEffect(() => {
+    if (!sshBrowserCreateDialogState) {
+      return
+    }
+
+    if (
+      activeTabId !== sshBrowserCreateDialogState.tabId ||
+      sshBrowserStates[sshBrowserCreateDialogState.tabId] === undefined
+    ) {
+      closeSshBrowserCreateDialog()
+    }
+  }, [activeTabId, closeSshBrowserCreateDialog, sshBrowserCreateDialogState, sshBrowserStates])
+
+  useEffect(() => {
     if (!isSshMenuOpen) {
       return
     }
@@ -7230,6 +7371,9 @@ function TerminalApp(): React.JSX.Element {
   const activeSshBrowserWidth = activeTabId
     ? (sshBrowserWidths[activeTabId] ?? defaultSshBrowserWidth)
     : defaultSshBrowserWidth
+  const sshBrowserCreateDialogBrowserState = sshBrowserCreateDialogState
+    ? (sshBrowserStates[sshBrowserCreateDialogState.tabId] ?? null)
+    : null
   const terminalContextMenuTab = terminalContextMenu
     ? (tabs.find((tab) => tab.id === terminalContextMenu.tabId) ?? null)
     : null
@@ -7519,6 +7663,85 @@ function TerminalApp(): React.JSX.Element {
     },
     [loadSshDirectory]
   )
+
+  const handleCreateSshBrowserEntry = useCallback(
+    (browserState: SshBrowserState, isDirectory: boolean): void => {
+      if (!browserState.path || browserState.isLoading) {
+        return
+      }
+
+      updateSshBrowserState(browserState.tabId, (currentState) => ({
+        ...currentState,
+        errorMessage: null
+      }))
+      setSshBrowserCreateDialogState({
+        errorMessage: null,
+        isDirectory,
+        name: '',
+        tabId: browserState.tabId
+      })
+    },
+    [updateSshBrowserState]
+  )
+
+  const handleChangeSshBrowserCreateDialogName = useCallback((name: string): void => {
+    setSshBrowserCreateDialogState((currentState) =>
+      currentState
+        ? {
+            ...currentState,
+            errorMessage: null,
+            name
+          }
+        : currentState
+    )
+  }, [])
+
+  const handleSubmitSshBrowserCreateDialog = useCallback((): void => {
+    const currentDialogState = sshBrowserCreateDialogState
+
+    if (!currentDialogState) {
+      return
+    }
+
+    const browserState = sshBrowserStatesRef.current[currentDialogState.tabId]
+
+    if (!browserState?.path || browserState.isLoading) {
+      setSshBrowserCreateDialogState((previousState) =>
+        previousState
+          ? {
+              ...previousState,
+              errorMessage: 'Remote folder is not available yet.'
+            }
+          : previousState
+      )
+      return
+    }
+
+    const nextName = currentDialogState.name.trim()
+    const validationError = getSshBrowserEntryNameError(nextName)
+
+    if (validationError) {
+      setSshBrowserCreateDialogState((previousState) =>
+        previousState
+          ? {
+              ...previousState,
+              errorMessage: validationError
+            }
+          : previousState
+      )
+      return
+    }
+
+    const entryLabel = currentDialogState.isDirectory ? 'folder' : 'file'
+    const remotePath = joinRemoteDirectoryPath(browserState.path, nextName)
+
+    closeSshBrowserCreateDialog()
+    void runSshBrowserMutation(
+      browserState,
+      () => window.api.ssh.createPath(browserState.configId, remotePath, currentDialogState.isDirectory),
+      `Unable to create this remote ${entryLabel}.`
+    )
+  }, [closeSshBrowserCreateDialog, runSshBrowserMutation, sshBrowserCreateDialogState])
 
   const handleOpenSshBrowserContextMenu = useCallback(
     (
@@ -7975,19 +8198,12 @@ function TerminalApp(): React.JSX.Element {
       }
 
       const nextName = nextNameInput.trim()
+      const validationError = getSshBrowserEntryNameError(nextName)
 
-      if (nextName === '') {
+      if (validationError) {
         updateSshBrowserState(browserState.tabId, (currentState) => ({
           ...currentState,
-          errorMessage: 'Enter a name before renaming this remote entry.'
-        }))
-        return
-      }
-
-      if (nextName.includes('/')) {
-        updateSshBrowserState(browserState.tabId, (currentState) => ({
-          ...currentState,
-          errorMessage: 'Remote entry names cannot include "/".'
+          errorMessage: validationError
         }))
         return
       }
@@ -8808,7 +9024,33 @@ function TerminalApp(): React.JSX.Element {
                         title="Up"
                         type="button"
                       >
-                        <ChevronUp
+                        <ArrowUp
+                          aria-hidden="true"
+                          className="ssh-browser-toolbar-button-icon"
+                        />
+                      </button>
+                      <button
+                        aria-label="Create new file"
+                        className="ssh-browser-toolbar-button is-icon"
+                        disabled={!browserState.path || browserState.isLoading}
+                        onClick={() => handleCreateSshBrowserEntry(browserState, false)}
+                        title="New file"
+                        type="button"
+                      >
+                        <FilePlus
+                          aria-hidden="true"
+                          className="ssh-browser-toolbar-button-icon"
+                        />
+                      </button>
+                      <button
+                        aria-label="Create new folder"
+                        className="ssh-browser-toolbar-button is-icon"
+                        disabled={!browserState.path || browserState.isLoading}
+                        onClick={() => handleCreateSshBrowserEntry(browserState, true)}
+                        title="New folder"
+                        type="button"
+                      >
+                        <FolderPlus
                           aria-hidden="true"
                           className="ssh-browser-toolbar-button-icon"
                         />
@@ -8831,14 +9073,9 @@ function TerminalApp(): React.JSX.Element {
                     </div>
                   </div>
                   <div className="ssh-browser-section">
-                    <div className="ssh-browser-section-header">
-                      <div className="ssh-browser-section-copy">
-                        <h3 className="ssh-browser-section-title">Contents</h3>
-                        {browserSectionNote ? (
-                          <p className="ssh-browser-section-note">{browserSectionNote}</p>
-                        ) : null}
-                      </div>
-                    </div>
+                    {browserSectionNote ? (
+                      <p className="ssh-browser-section-note">{browserSectionNote}</p>
+                    ) : null}
                     {browserState.errorMessage ? (
                       <p className="ssh-browser-error">{browserState.errorMessage}</p>
                     ) : null}
@@ -9125,6 +9362,15 @@ function TerminalApp(): React.JSX.Element {
             )}
           </div>
         </Modal>
+      ) : null}
+      {sshBrowserCreateDialogState && sshBrowserCreateDialogBrowserState ? (
+        <SshBrowserCreateDialog
+          browserState={sshBrowserCreateDialogBrowserState}
+          draftState={sshBrowserCreateDialogState}
+          onChangeName={handleChangeSshBrowserCreateDialogName}
+          onClose={closeSshBrowserCreateDialog}
+          onSubmit={handleSubmitSshBrowserCreateDialog}
+        />
       ) : null}
       {sshRemoteEditorLoadingState ? (
         <SshRemoteEditorLoadingDialog loadingState={sshRemoteEditorLoadingState} />

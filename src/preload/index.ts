@@ -105,6 +105,12 @@ const clipboardApi: ClipboardApi = {
 
 const ssh: SshApi = {
   connect: (configId, cwd) => ipcRenderer.invoke('ssh:connect', { configId, cwd }),
+  createPath: (configId, path, isDirectory) =>
+    ipcRenderer.invoke('ssh:create-path', {
+      configId,
+      isDirectory,
+      path
+    }),
   deleteConfig: (configId) => ipcRenderer.invoke('ssh:delete-config', configId),
   deletePath: (configId, path, isDirectory) =>
     ipcRenderer.invoke('ssh:delete-path', {

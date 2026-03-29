@@ -1242,6 +1242,19 @@ function buildSshListDirectoryCommand(path?: string): string {
   return `sh -lc ${quoteForPosixShell(scriptLines.join('\n'))}`
 }
 
+function buildSshCreatePathCommand(path: string, isDirectory: boolean): string {
+  const existingEntryMessage = isDirectory
+    ? 'Remote folder already exists.'
+    : 'Remote file already exists.'
+  const scriptLines = [
+    'set -e',
+    `if [ -e ${quoteForPosixShell(path)} ]; then printf '%s\\n' ${quoteForPosixShell(existingEntryMessage)} >&2; exit 1; fi`,
+    isDirectory ? `mkdir -- ${quoteForPosixShell(path)}` : `: > ${quoteForPosixShell(path)}`
+  ]
+
+  return `sh -lc ${quoteForPosixShell(scriptLines.join('\n'))}`
+}
+
 function buildSshDeletePathCommand(path: string, isDirectory: boolean): string {
   const scriptLines = [
     'set -e',
@@ -2369,6 +2382,17 @@ async function listSshDirectory(
   return parseSshRemoteDirectoryListing(output)
 }
 
+async function createSshPath(configId: string, path: string, isDirectory: boolean): Promise<void> {
+  const { config, password } = resolveSshServerConnection(configId)
+  const normalizedPath = path.trim()
+
+  if (normalizedPath === '') {
+    throw new Error('Remote path is required.')
+  }
+
+  await runSshCommand(config, password, buildSshCreatePathCommand(normalizedPath, isDirectory))
+}
+
 async function deleteSshPath(configId: string, path: string, isDirectory: boolean): Promise<void> {
   const { config, password } = resolveSshServerConnection(configId)
   await runSshCommand(config, password, buildSshDeletePathCommand(path, isDirectory))
@@ -2799,6 +2823,11 @@ app.whenReady().then(() => {
   ipcMain.handle('ssh:list-configs', () => listSshServers())
   ipcMain.handle('ssh:connect', (event, payload: { configId: string; cwd?: string }) =>
     connectToSshServer(event.sender, payload)
+  )
+  ipcMain.handle(
+    'ssh:create-path',
+    (_event, payload: { configId: string; isDirectory: boolean; path: string }) =>
+      createSshPath(payload.configId, payload.path, payload.isDirectory)
   )
   ipcMain.handle('ssh:delete-config', (event, configId: string) =>
     removeSshConfig(event.sender, configId)

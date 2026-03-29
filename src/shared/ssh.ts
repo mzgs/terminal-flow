@@ -74,6 +74,7 @@ export interface SshRemoteTextFile {
 
 export interface SshApi {
   connect: (configId: string, cwd?: string) => Promise<TerminalCreateResult>
+  createPath: (configId: string, path: string, isDirectory: boolean) => Promise<void>
   deleteConfig: (configId: string) => Promise<void>
   deletePath: (configId: string, path: string, isDirectory: boolean) => Promise<void>
   downloadPath: (configId: string, path: string, isDirectory: boolean) => Promise<string>
