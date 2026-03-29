@@ -2577,9 +2577,23 @@ function getVisibleSshBrowserEntries(
   filterQuery: string
 ): SshRemoteDirectoryEntry[] {
   const normalizedQuery = filterQuery.trim().toLowerCase()
-  return normalizedQuery === ''
-    ? entries
-    : entries.filter((entry) => getSshBrowserEntryFilterText(entry).includes(normalizedQuery))
+  const filteredEntries =
+    normalizedQuery === ''
+      ? entries
+      : entries.filter((entry) => getSshBrowserEntryFilterText(entry).includes(normalizedQuery))
+  const directoryEntries: SshRemoteDirectoryEntry[] = []
+  const fileEntries: SshRemoteDirectoryEntry[] = []
+
+  for (const entry of filteredEntries) {
+    if (entry.isDirectory) {
+      directoryEntries.push(entry)
+      continue
+    }
+
+    fileEntries.push(entry)
+  }
+
+  return [...directoryEntries, ...fileEntries]
 }
 
 function getSshBrowserEntryNameError(name: string): string | null {
@@ -9299,11 +9313,6 @@ function TerminalApp(): React.JSX.Element {
                       </label>
                     </div>
                   </div>
-                  {browserState.path ? (
-                    <p className="ssh-browser-path" title={browserState.path}>
-                      {browserState.path}
-                    </p>
-                  ) : null}
                   <div className="ssh-browser-section">
                     {browserSectionNote ? (
                       <p className="ssh-browser-section-note">{browserSectionNote}</p>
@@ -9409,6 +9418,14 @@ function TerminalApp(): React.JSX.Element {
                         })}
                       </div>
                     </div>
+                  </div>
+                  <div
+                    className="ssh-browser-statusbar"
+                    title={browserState.path ?? 'Remote path unavailable'}
+                  >
+                    <p className="ssh-browser-path">
+                      {browserState.path ?? 'Remote path unavailable'}
+                    </p>
                   </div>
                 </aside>
               )
