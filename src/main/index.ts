@@ -53,6 +53,16 @@ interface TerminalSession {
   trackCwd: boolean
 }
 
+interface SftpBrowserSession {
+  client: SftpClient
+  configId: string
+  idleTimeout: NodeJS.Timeout | null
+  isConnected: boolean
+  isDisposed: boolean
+  operationQueue: Promise<void>
+  ownerId: number
+}
+
 interface TerminalSpawnResult {
   cwd: string
   process: IPty
@@ -99,6 +109,8 @@ interface SshDownloadPlan {
 
 const terminals = new Map<number, TerminalSession>()
 const ownersWithCleanup = new Set<number>()
+const sftpBrowserSessions = new Map<string, SftpBrowserSession>()
+const ownersWithSftpBrowserCleanup = new Set<number>()
 let nextTerminalId = 1
 let persistedSession: SessionSnapshot | null = null
 let persistedSettings: AppSettings | null = null
@@ -114,6 +126,7 @@ const sshRemoteCwdOscPrefix = '\u001b]633;TerminalRemoteCwd='
 const sshConnectTimeoutSeconds = 10
 const sshServerAliveIntervalSeconds = 5
 const sshServerAliveCountMax = 2
+const sftpBrowserSessionIdleTimeoutMs = 60_000
 const maxLocalTextFileBytes = 100 * 1024 * 1024
 const maxSshRemoteTextFileBytes = 16 * 1024 * 1024
 const defaultMainWindowWidth = 1000
@@ -519,6 +532,211 @@ function registerOwnerCleanup(webContents: WebContents): void {
 
   ownersWithCleanup.add(webContents.id)
   webContents.once('destroyed', () => destroyOwnerTerminals(webContents.id))
+}
+
+function createSftpBrowserClient(configId: string): SftpClient {
+  return new SftpClient(`terminal-list-directory:${configId}`)
+}
+
+function getSftpBrowserSessionKey(ownerId: number, configId: string): string {
+  return `${ownerId}:${configId}`
+}
+
+function clearSftpBrowserSessionIdleTimeout(session: SftpBrowserSession): void {
+  if (!session.idleTimeout) {
+    return
+  }
+
+  clearTimeout(session.idleTimeout)
+  session.idleTimeout = null
+}
+
+async function resetSftpBrowserSessionClient(session: SftpBrowserSession): Promise<void> {
+  const currentClient = session.client
+  session.client = createSftpBrowserClient(session.configId)
+  session.isConnected = false
+
+  await currentClient.end().catch(() => false)
+}
+
+async function destroySftpBrowserSession(
+  sessionKey: string,
+  session: SftpBrowserSession | undefined = sftpBrowserSessions.get(sessionKey)
+): Promise<void> {
+  if (!session || session.isDisposed) {
+    return
+  }
+
+  session.isDisposed = true
+  clearSftpBrowserSessionIdleTimeout(session)
+
+  if (sftpBrowserSessions.get(sessionKey) === session) {
+    sftpBrowserSessions.delete(sessionKey)
+  }
+
+  await session.operationQueue.catch(() => undefined)
+  await resetSftpBrowserSessionClient(session)
+}
+
+function destroyOwnerSftpBrowserSessions(ownerId: number): void {
+  for (const [sessionKey, session] of Array.from(sftpBrowserSessions.entries())) {
+    if (session.ownerId === ownerId) {
+      void destroySftpBrowserSession(sessionKey, session)
+    }
+  }
+
+  ownersWithSftpBrowserCleanup.delete(ownerId)
+}
+
+function destroyAllSftpBrowserSessions(): void {
+  for (const [sessionKey, session] of Array.from(sftpBrowserSessions.entries())) {
+    void destroySftpBrowserSession(sessionKey, session)
+  }
+}
+
+function registerSftpBrowserOwnerCleanup(webContents: WebContents): void {
+  if (ownersWithSftpBrowserCleanup.has(webContents.id)) {
+    return
+  }
+
+  ownersWithSftpBrowserCleanup.add(webContents.id)
+  webContents.once('destroyed', () => destroyOwnerSftpBrowserSessions(webContents.id))
+}
+
+function scheduleSftpBrowserSessionIdleTimeout(
+  sessionKey: string,
+  session: SftpBrowserSession
+): void {
+  clearSftpBrowserSessionIdleTimeout(session)
+  session.idleTimeout = setTimeout(() => {
+    void destroySftpBrowserSession(sessionKey, session)
+  }, sftpBrowserSessionIdleTimeoutMs)
+  session.idleTimeout.unref()
+}
+
+function getOrCreateSftpBrowserSession(
+  webContents: WebContents,
+  configId: string
+): [string, SftpBrowserSession] {
+  registerSftpBrowserOwnerCleanup(webContents)
+
+  const sessionKey = getSftpBrowserSessionKey(webContents.id, configId)
+  const existingSession = sftpBrowserSessions.get(sessionKey)
+
+  if (existingSession && !existingSession.isDisposed) {
+    return [sessionKey, existingSession]
+  }
+
+  const session: SftpBrowserSession = {
+    client: createSftpBrowserClient(configId),
+    configId,
+    idleTimeout: null,
+    isConnected: false,
+    isDisposed: false,
+    operationQueue: Promise.resolve(),
+    ownerId: webContents.id
+  }
+
+  sftpBrowserSessions.set(sessionKey, session)
+  return [sessionKey, session]
+}
+
+function queueSftpBrowserSessionOperation<T>(
+  sessionKey: string,
+  session: SftpBrowserSession,
+  operation: () => Promise<T>
+): Promise<T> {
+  const queuedOperation = session.operationQueue
+    .catch(() => undefined)
+    .then(async () => {
+      if (session.isDisposed) {
+        throw new Error('Remote browser session is no longer available.')
+      }
+
+      clearSftpBrowserSessionIdleTimeout(session)
+
+      try {
+        return await operation()
+      } finally {
+        if (!session.isDisposed) {
+          scheduleSftpBrowserSessionIdleTimeout(sessionKey, session)
+        }
+      }
+    })
+
+  session.operationQueue = queuedOperation.then(
+    () => {},
+    () => {}
+  )
+
+  return queuedOperation
+}
+
+async function connectSftpBrowserSession(session: SftpBrowserSession): Promise<SftpClient> {
+  if (session.isDisposed) {
+    throw new Error('Remote browser session is no longer available.')
+  }
+
+  if (session.isConnected) {
+    return session.client
+  }
+
+  const { config, password } = resolveSshServerConnection(session.configId)
+
+  try {
+    await session.client.connect(buildSftpConnectOptions(config, password))
+    session.isConnected = true
+    return session.client
+  } catch (error) {
+    await resetSftpBrowserSessionClient(session)
+    throw error
+  }
+}
+
+function isRecoverableSftpBrowserSessionError(error: unknown): boolean {
+  const message = (error instanceof Error ? error.message : String(error)).toLowerCase()
+
+  return [
+    'not connected',
+    'no sftp connection',
+    'connection ended',
+    'connection lost',
+    'socket closed',
+    'channel is not open',
+    'session is closed',
+    'client is closed'
+  ].some((token) => message.includes(token))
+}
+
+async function runSftpBrowserSessionOperation<T>(
+  webContents: WebContents,
+  configId: string,
+  operation: (sftpClient: SftpClient) => Promise<T>
+): Promise<T> {
+  const [sessionKey, session] = getOrCreateSftpBrowserSession(webContents, configId)
+
+  return queueSftpBrowserSessionOperation(sessionKey, session, async () => {
+    const sftpClient = await connectSftpBrowserSession(session)
+
+    try {
+      return await operation(sftpClient)
+    } catch (error) {
+      if (!isRecoverableSftpBrowserSessionError(error) || session.isDisposed) {
+        throw error
+      }
+
+      await resetSftpBrowserSessionClient(session)
+      return operation(await connectSftpBrowserSession(session))
+    }
+  })
+}
+
+function invalidateSftpBrowserSessionsForConfig(configId: string): void {
+  for (const [sessionKey, session] of Array.from(sftpBrowserSessions.entries())) {
+    if (session.configId === configId) {
+      void destroySftpBrowserSession(sessionKey, session)
+    }
+  }
 }
 
 function createTerminal(
@@ -2448,6 +2666,7 @@ function saveSshServer(config: SshServerConfig): void {
 
   persistSshServers(nextSshServers)
   sshServers = nextSshServers
+  invalidateSftpBrowserSessionsForConfig(config.id)
 }
 
 function deleteSshServer(configId: string): void {
@@ -2461,6 +2680,7 @@ function deleteSshServer(configId: string): void {
 
   persistSshServers(nextSshServers)
   sshServers = nextSshServers
+  invalidateSftpBrowserSessionsForConfig(configId)
 }
 
 function resolveSshServerConnection(configId: string): {
@@ -2514,14 +2734,11 @@ function connectToSshServer(
 }
 
 async function listSshDirectory(
+  webContents: WebContents,
   configId: string,
   path?: string
 ): Promise<SshRemoteDirectoryListing> {
-  const { config, password } = resolveSshServerConnection(configId)
-  const sftpClient = new SftpClient('terminal-list-directory')
-
-  try {
-    await sftpClient.connect(buildSftpConnectOptions(config, password))
+  return runSftpBrowserSessionOperation(webContents, configId, async (sftpClient) => {
     const resolvedPath = await resolveSftpDirectoryPath(sftpClient, path)
     const entries = await sftpClient.list(resolvedPath)
 
@@ -2531,9 +2748,7 @@ async function listSshDirectory(
         .sort((left, right) => left.name.localeCompare(right.name)),
       path: resolvedPath
     }
-  } finally {
-    await sftpClient.end().catch(() => false)
-  }
+  })
 }
 
 async function createSshPath(configId: string, path: string, isDirectory: boolean): Promise<void> {
@@ -3025,8 +3240,8 @@ app.whenReady().then(() => {
     (event, payload: { configId: string; isDirectory: boolean; path: string }) =>
       downloadSshPath(event.sender, payload.configId, payload.path, payload.isDirectory)
   )
-  ipcMain.handle('ssh:list-directory', (_event, payload: { configId: string; path?: string }) =>
-    listSshDirectory(payload.configId, payload.path)
+  ipcMain.handle('ssh:list-directory', (event, payload: { configId: string; path?: string }) =>
+    listSshDirectory(event.sender, payload.configId, payload.path)
   )
   ipcMain.handle('ssh:read-text-file', (_event, payload: { configId: string; path: string }) =>
     readSshTextFile(payload.configId, payload.path)
@@ -3057,6 +3272,7 @@ app.whenReady().then(() => {
 
   app.on('before-quit', () => {
     flushStagedSessionSnapshot()
+    destroyAllSftpBrowserSessions()
   })
 
   app.on('activate', function () {
