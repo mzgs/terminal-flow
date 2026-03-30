@@ -75,6 +75,35 @@ function capture(command, commandArgs) {
   return result.stdout.trim()
 }
 
+function hasValue(value) {
+  return typeof value === 'string' && value.trim().length > 0
+}
+
+function hasMacSigningIdentity() {
+  if (hasValue(process.env.CSC_LINK) || hasValue(process.env.CSC_NAME)) {
+    return true
+  }
+
+  if (process.platform !== 'darwin') {
+    return false
+  }
+
+  const result = spawnSync('security', ['find-identity', '-v', '-p', 'codesigning'], {
+    cwd: ROOT_DIR,
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe']
+  })
+
+  if (result.status !== 0) {
+    return false
+  }
+
+  const output = `${result.stdout}\n${result.stderr}`
+  return /(Developer ID Application:|Apple Distribution:|Mac Developer:|3rd Party Mac Developer Application:)/.test(
+    output
+  )
+}
+
 function getArgValue(index, flag) {
   const value = args[index + 1]
   if (!value || value.startsWith('--')) {
@@ -140,6 +169,10 @@ const releaseVersion = tag.startsWith('v') ? tag.slice(1) : tag
 const productName = packageJson.productName
 const packageName = packageJson.name
 const supportedArchitectures = new Set(['arm64', 'x64'])
+const hasMacCodeSigningIdentity = hasMacSigningIdentity()
+const macBuildOverrides = hasMacCodeSigningIdentity
+  ? []
+  : ['--config.mac.identity=-', '--config.mac.hardenedRuntime=false']
 const branch = capture('git', ['rev-parse', '--abbrev-ref', 'HEAD'])
 const statusOutput = capture('git', ['status', '--porcelain'])
 const remoteUrl = capture('git', ['config', '--get', 'remote.origin.url'])
@@ -321,14 +354,22 @@ console.log(
   `Preparing GitHub release ${tag} from ${branch} (${options.architectures.join(', ')})`
 )
 
+if (!hasMacCodeSigningIdentity) {
+  console.warn(
+    'No macOS signing identity detected. macOS release artifacts will be ad-hoc signed with hardened runtime disabled.'
+  )
+}
+
 if (!options.skipBuild) {
   run('npm', ['run', 'build'], 'npm run build')
 
   for (const architecture of options.architectures) {
+    const macCommandArgs = ['electron-builder', '--mac', `--${architecture}`, ...macBuildOverrides]
+
     run(
       'npx',
-      ['electron-builder', '--mac', `--${architecture}`],
-      `npx electron-builder --mac --${architecture}`
+      macCommandArgs,
+      `npx ${macCommandArgs.join(' ')}`
     )
     run(
       'npx',
