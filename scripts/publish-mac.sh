@@ -12,7 +12,10 @@ fi
 echo "Building release artifacts..."
 # Build only the unpacked mac app bundle (skip dmg/zip artifacts).
 npm run build
-npx --no-install electron-builder --mac dir
+# Force a consistent ad-hoc signature for local installs and disable hardened
+# runtime, which otherwise enables library validation and blocks Electron's
+# framework in a non-notarized local app bundle.
+npx --no-install electron-builder --mac dir --config.mac.identity=- --config.mac.hardenedRuntime=false
 
 APP_PATH="$(find dist -maxdepth 4 -type d -name '*.app' 2>/dev/null | sort | tail -n 1 || true)"
 if [[ -z "$APP_PATH" ]]; then
