@@ -54,6 +54,14 @@ npm run build:linux
 
 Build artifacts are generated in `dist/`.
 
+### macOS install note
+
+If macOS blocks the app when opening it, clear the app's extended attributes before launching:
+
+```bash
+xattr -cr /Applications/TerminalFlow.app
+```
+
 ## 🧱 Stack
 
 - Electron
