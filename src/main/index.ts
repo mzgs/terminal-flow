@@ -127,6 +127,7 @@ const sshRemoteCwdOscPrefix = '\u001b]633;TerminalRemoteCwd='
 const sshConnectTimeoutSeconds = 10
 const sshServerAliveIntervalSeconds = 5
 const sshServerAliveCountMax = 2
+const sshStrictHostKeyCheckingMode = 'accept-new'
 const sftpBrowserSessionIdleTimeoutMs = 60_000
 const maxLocalTextFileBytes = 100 * 1024 * 1024
 const maxSshRemoteTextFileBytes = 16 * 1024 * 1024
@@ -1057,6 +1058,8 @@ function buildSshBaseArgs(config: SshServerConfig): string[] {
 
   args.push(
     '-o',
+    `StrictHostKeyChecking=${sshStrictHostKeyCheckingMode}`,
+    '-o',
     `ConnectTimeout=${sshConnectTimeoutSeconds}`,
     '-o',
     `ServerAliveInterval=${sshServerAliveIntervalSeconds}`,
@@ -1085,6 +1088,8 @@ function buildScpBaseArgs(config: SshServerConfig): string[] {
   }
 
   args.push(
+    '-o',
+    `StrictHostKeyChecking=${sshStrictHostKeyCheckingMode}`,
     '-o',
     `ConnectTimeout=${sshConnectTimeoutSeconds}`,
     '-o',
