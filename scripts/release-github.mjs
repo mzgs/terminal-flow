@@ -190,6 +190,76 @@ function incrementPatchVersion(value) {
   return `${parsedVersion.major}.${parsedVersion.minor}.${parsedVersion.patch + 1}`
 }
 
+function parseGitHubOrigin(value) {
+  if (value.startsWith('https://')) {
+    let url
+
+    try {
+      url = new URL(value)
+    } catch {
+      fail('origin must be a valid GitHub URL.')
+    }
+
+    if (url.hostname !== 'github.com') {
+      fail('origin must point to a GitHub repository.')
+    }
+
+    const pathMatch = url.pathname.match(/^\/([^/]+)\/(.+?)(?:\.git)?\/?$/)
+
+    if (!pathMatch) {
+      fail('origin must point to a GitHub repository.')
+    }
+
+    return {
+      isHttps: true,
+      owner: pathMatch[1],
+      password: decodeURIComponent(url.password),
+      repo: pathMatch[2],
+      username: decodeURIComponent(url.username)
+    }
+  }
+
+  const sshMatch = value.match(/^git@github\.com:([^/]+)\/(.+?)(?:\.git)?$/)
+
+  if (!sshMatch) {
+    fail('origin must point to a GitHub repository.')
+  }
+
+  return {
+    isHttps: false,
+    owner: sshMatch[1],
+    password: '',
+    repo: sshMatch[2],
+    username: ''
+  }
+}
+
+function looksLikeGitHubToken(value) {
+  return /^(gh[pousr]_|github_pat_)/.test(value)
+}
+
+function resolveGitHubAuthFromOriginUrl(origin) {
+  if (!origin.isHttps) {
+    return null
+  }
+
+  if (hasValue(origin.password)) {
+    return {
+      header: `Bearer ${origin.password}`,
+      source: 'origin URL'
+    }
+  }
+
+  if (looksLikeGitHubToken(origin.username)) {
+    return {
+      header: `Bearer ${origin.username}`,
+      source: 'origin URL'
+    }
+  }
+
+  return null
+}
+
 const ROOT_DIR = resolve(new URL('..', import.meta.url).pathname)
 const packageJson = JSON.parse(readFileSync(resolve(ROOT_DIR, 'package.json'), 'utf8'))
 const productName = packageJson.productName
@@ -203,6 +273,7 @@ const macBuildOverrides = hasMacCodeSigningIdentity
 const branch = capture('git', ['rev-parse', '--abbrev-ref', 'HEAD'])
 const statusOutput = capture('git', ['status', '--porcelain'])
 const remoteUrl = capture('git', ['config', '--get', 'remote.origin.url'])
+const origin = parseGitHubOrigin(remoteUrl)
 
 if (options.architectures.length === 0) {
   fail('At least one architecture must be provided via --arch.')
@@ -220,14 +291,6 @@ if (statusOutput && !options.allowDirty) {
 
 if (branch === 'HEAD') {
   fail('Detached HEAD is not supported for releases.')
-}
-
-const remoteMatch =
-  remoteUrl.match(/^https:\/\/(?:[^:@]+:([^@]+)@)?github\.com\/([^/]+)\/(.+?)(?:\.git)?$/) ||
-  remoteUrl.match(/^git@github\.com:([^/]+)\/(.+?)(?:\.git)?$/)
-
-if (!remoteMatch) {
-  fail('origin must point to a GitHub repository.')
 }
 
 function collectExistingTags() {
@@ -292,19 +355,12 @@ function resolveReleaseTag() {
   }
 }
 
-const owner = remoteUrl.startsWith('git@')
-  ? remoteMatch[1]
-  : remoteMatch[2]
-const repo = remoteUrl.startsWith('git@')
-  ? remoteMatch[2]
-  : remoteMatch[3]
-const githubToken =
-  process.env.GITHUB_TOKEN ||
-  process.env.GH_TOKEN ||
-  (!remoteUrl.startsWith('git@') ? remoteMatch[1] : null)
+const owner = origin.owner
+const repo = origin.repo
+const githubAuth = resolveGitHubAuthFromOriginUrl(origin)
 
-if (!options.skipRelease && !githubToken) {
-  fail('Set GITHUB_TOKEN or GH_TOKEN, or use an HTTPS origin URL with embedded credentials.')
+if (!options.skipRelease && !githubAuth) {
+  fail('origin must include GitHub credentials in its HTTPS URL.')
 }
 
 const resolvedRelease = resolveReleaseTag()
@@ -327,17 +383,6 @@ function resolveAsset(label, candidateNames) {
   fail(`Expected ${label} release asset was not found. Checked: ${checkedAssets}.${availableSummary}`)
 }
 
-function getMacZipCandidates(architecture) {
-  if (architecture === 'x64') {
-    return [
-      `${productName}-${releaseVersion}-${architecture}-mac.zip`,
-      `${productName}-${releaseVersion}-mac.zip`
-    ]
-  }
-
-  return [`${productName}-${releaseVersion}-${architecture}-mac.zip`]
-}
-
 function getAppImageCandidates(architecture) {
   if (architecture === 'x64') {
     return [
@@ -352,7 +397,6 @@ function getAppImageCandidates(architecture) {
 function collectReleaseAssets() {
   return options.architectures.flatMap((architecture) => [
     resolveAsset('macOS DMG', [`${packageName}-${releaseVersion}-${architecture}.dmg`]),
-    resolveAsset('macOS ZIP', getMacZipCandidates(architecture)),
     resolveAsset('Windows installer', [`${packageName}-${releaseVersion}-${architecture}-setup.exe`]),
     resolveAsset('Linux AppImage', getAppImageCandidates(architecture))
   ])
@@ -363,7 +407,7 @@ async function githubRequest(path, init = {}) {
     ...init,
     headers: {
       Accept: 'application/vnd.github+json',
-      Authorization: `Bearer ${githubToken}`,
+      Authorization: githubAuth.header,
       'User-Agent': 'terminal-flow-release-script',
       'X-GitHub-Api-Version': '2022-11-28',
       ...(init.headers || {})
@@ -376,7 +420,7 @@ async function githubRequest(path, init = {}) {
 
   if (!response.ok) {
     const text = await response.text()
-    fail(`GitHub API request failed (${response.status}): ${text}`)
+    fail(`GitHub API request failed (${response.status}, ${githubAuth.source}): ${text}`)
   }
 
   return response
@@ -444,7 +488,7 @@ async function uploadAssets(release) {
     const response = await fetch(`${uploadUrl}?name=${encodeURIComponent(assetName)}`, {
       body: readFileSync(assetPath),
       headers: {
-        Authorization: `Bearer ${githubToken}`,
+        Authorization: githubAuth.header,
         'Content-Type': 'application/octet-stream',
         'User-Agent': 'terminal-flow-release-script',
         'X-GitHub-Api-Version': '2022-11-28'
@@ -506,6 +550,7 @@ if (!options.skipBuild) {
     const macCommandArgs = [
       'electron-builder',
       '--mac',
+      'dmg',
       `--${architecture}`,
       ...builderVersionOverrides,
       ...macBuildOverrides
@@ -518,8 +563,8 @@ if (!options.skipBuild) {
     )
     run(
       'npx',
-      ['electron-builder', '--win', `--${architecture}`, ...builderVersionOverrides],
-      `npx electron-builder --win --${architecture} ${builderVersionOverrides.join(' ')}`
+      ['electron-builder', '--win', 'nsis', `--${architecture}`, ...builderVersionOverrides],
+      `npx electron-builder --win nsis --${architecture} ${builderVersionOverrides.join(' ')}`
     )
 
     const linuxResult = run(
