@@ -297,6 +297,22 @@ function formatShellName(shellPath: string): string {
   return basename(shellPath).replace(/\.exe$/i, '') || 'shell'
 }
 
+function getShellLaunchArgs(shellPath: string): string[] {
+  if (process.platform !== 'darwin') {
+    return []
+  }
+
+  const shellName = formatShellName(shellPath)
+
+  // macOS GUI apps often start with a reduced environment. Launch the default
+  // shell as interactive + login so standard PATH setup runs before the prompt.
+  if (shellName === 'zsh' || shellName === 'bash' || shellName === 'sh') {
+    return ['-il']
+  }
+
+  return []
+}
+
 function formatTerminalTitle(cwd: string, shellName: string): string {
   const homePath = app.getPath('home')
   const normalizedCwd = cwd.replaceAll('\\', '/')
@@ -476,10 +492,11 @@ function spawnTerminalProcess(options?: TerminalCreateOptions): TerminalSpawnRes
   for (const shellPath of getShellCandidates()) {
     try {
       const shellName = formatShellName(shellPath)
+      const shellArgs = getShellLaunchArgs(shellPath)
 
       return {
         cwd,
-        process: spawn(shellPath, [], {
+        process: spawn(shellPath, shellArgs, {
           name: 'xterm-256color',
           cols: 100,
           rows: 30,
