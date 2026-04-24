@@ -18,7 +18,8 @@ import type {
   TerminalCreateOptions,
   TerminalCwdEvent,
   TerminalDataEvent,
-  TerminalExitEvent
+  TerminalExitEvent,
+  TerminalNavigationShortcutEvent
 } from '../shared/terminal'
 
 // Custom APIs for renderer
@@ -28,6 +29,7 @@ const terminal: TerminalApi = {
   resize: (terminalId, cols, rows) =>
     ipcRenderer.send('terminal:resize', { terminalId, cols, rows }),
   kill: (terminalId) => ipcRenderer.send('terminal:kill', terminalId),
+  setFocused: (focused) => ipcRenderer.send('terminal:set-focused', focused),
   onFindRequested: (callback) => {
     const listener = (): void => {
       callback()
@@ -37,6 +39,20 @@ const terminal: TerminalApi = {
 
     return () => {
       ipcRenderer.off('terminal:find-requested', listener)
+    }
+  },
+  onNavigationShortcut: (callback) => {
+    const listener = (
+      _event: Electron.IpcRendererEvent,
+      payload: TerminalNavigationShortcutEvent
+    ): void => {
+      callback(payload)
+    }
+
+    ipcRenderer.on('terminal:navigation-shortcut', listener)
+
+    return () => {
+      ipcRenderer.off('terminal:navigation-shortcut', listener)
     }
   },
   onData: (callback) => {

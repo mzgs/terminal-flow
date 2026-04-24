@@ -2936,28 +2936,6 @@ function isXtermHelperTextarea(target: EventTarget | null): boolean {
   return target instanceof HTMLTextAreaElement && target.classList.contains('xterm-helper-textarea')
 }
 
-function getMacTerminalNavigationShortcut(event: KeyboardEvent): string | null {
-  if (
-    event.type !== 'keydown' ||
-    !event.metaKey ||
-    event.ctrlKey ||
-    event.altKey ||
-    event.shiftKey
-  ) {
-    return null
-  }
-
-  if (event.key === 'ArrowLeft') {
-    return '\u001bOH'
-  }
-
-  if (event.key === 'ArrowRight') {
-    return '\u001bOF'
-  }
-
-  return null
-}
-
 function appendSearchCell(
   searchableLine: SearchableLine,
   row: number,
@@ -5445,7 +5423,6 @@ function TerminalApp(): React.JSX.Element {
     typeof navigator !== 'undefined' && navigator.userAgent.includes('Mac')
       ? 'platform-macos'
       : 'platform-default'
-  const isMacPlatform = platformClassName === 'platform-macos'
   const selectedTerminalColorScheme =
     terminalColorSchemesById.get(selectedTerminalColorSchemeId) ?? defaultTerminalColorScheme
   const selectedTerminalTheme = getConfiguredTerminalTheme(
@@ -6039,6 +6016,21 @@ function TerminalApp(): React.JSX.Element {
 
     runtime.terminal.focus()
   }, [getActivePaneIdForTab, getPaneRuntime])
+
+  const writeActiveTerminalShortcut = useCallback(
+    (data: string): boolean => {
+      const currentActiveTabId = activeTabIdRef.current
+      const runtime = getPaneRuntime(getActivePaneIdForTab(currentActiveTabId))
+
+      if (!runtime || runtime.disposed || runtime.closed || runtime.terminalId === null) {
+        return false
+      }
+
+      window.api.terminal.write(runtime.terminalId, data)
+      return true
+    },
+    [getActivePaneIdForTab, getPaneRuntime]
+  )
 
   const refreshSearchMatches = useCallback(
     (tabId: string | null, query: string): boolean => {
@@ -6977,11 +6969,26 @@ function TerminalApp(): React.JSX.Element {
       terminal.loadAddon(fitAddon)
       terminal.open(hostElement)
       restorePersistedTerminalOutput(terminal, pane.outputLines)
+      const terminalTextarea = terminal.textarea
+      const handleTerminalFocus = (): void => {
+        window.api.terminal.setFocused(true)
+      }
+      const handleTerminalBlur = (): void => {
+        window.api.terminal.setFocused(false)
+      }
+
+      terminalTextarea?.addEventListener('focus', handleTerminalFocus)
+      terminalTextarea?.addEventListener('blur', handleTerminalBlur)
 
       const runtime: TerminalRuntime = {
         closed: false,
         disposed: false,
-        disposeFocus: { dispose: () => undefined },
+        disposeFocus: {
+          dispose: () => {
+            terminalTextarea?.removeEventListener('focus', handleTerminalFocus)
+            terminalTextarea?.removeEventListener('blur', handleTerminalBlur)
+          }
+        },
         disposeInput: terminal.onData((data) => {
           const currentRuntime = runtimesRef.current.get(paneId)
 
@@ -6996,23 +7003,6 @@ function TerminalApp(): React.JSX.Element {
         terminal,
         terminalId: null
       }
-
-      terminal.attachCustomKeyEventHandler((event) => {
-        if (!isMacPlatform) {
-          return true
-        }
-
-        const shortcutData = getMacTerminalNavigationShortcut(event)
-
-        if (shortcutData === null) {
-          return true
-        }
-
-        event.preventDefault()
-        event.stopPropagation()
-        terminal.input(shortcutData)
-        return false
-      })
 
       runtimesRef.current.set(paneId, runtime)
 
@@ -7060,7 +7050,6 @@ function TerminalApp(): React.JSX.Element {
       getTerminalThemeForSearchState,
       getActivePaneIdForTab,
       queueSearchRefresh,
-      isMacPlatform,
       selectedTerminalCursorBlink,
       selectedTerminalCursorStyle,
       selectedTerminalCursorWidth,
@@ -7405,6 +7394,16 @@ function TerminalApp(): React.JSX.Element {
       resizeObserver.disconnect()
     }
   }, [syncActiveTabLayout])
+
+  useEffect(() => {
+    const disposeNavigationShortcut = window.api.terminal.onNavigationShortcut((event) => {
+      writeActiveTerminalShortcut(event.data)
+    })
+
+    return () => {
+      disposeNavigationShortcut()
+    }
+  }, [writeActiveTerminalShortcut])
 
   useEffect(() => {
     const disposeData = window.api.terminal.onData((event) => {

@@ -29,12 +29,18 @@ export interface TerminalCwdEvent {
   title: string
 }
 
+export interface TerminalNavigationShortcutEvent {
+  data: string
+}
+
 export interface TerminalApi {
   create: (options?: TerminalCreateOptions) => Promise<TerminalCreateResult>
   write: (terminalId: number, data: string) => void
   resize: (terminalId: number, cols: number, rows: number) => void
   kill: (terminalId: number) => void
+  setFocused: (focused: boolean) => void
   onFindRequested: (callback: () => void) => () => void
+  onNavigationShortcut: (callback: (event: TerminalNavigationShortcutEvent) => void) => () => void
   onData: (callback: (event: TerminalDataEvent) => void) => () => void
   onCwd: (callback: (event: TerminalCwdEvent) => void) => () => void
   onExit: (callback: (event: TerminalExitEvent) => void) => () => void

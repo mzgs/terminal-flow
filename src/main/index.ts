@@ -110,6 +110,8 @@ interface SshDownloadPlan {
 
 const terminals = new Map<number, TerminalSession>()
 const ownersWithCleanup = new Set<number>()
+const ownersWithFocusedTerminal = new Set<number>()
+const pendingTerminalNavigationShortcuts = new Map<number, string>()
 const sftpBrowserSessions = new Map<string, SftpBrowserSession>()
 const ownersWithSftpBrowserCleanup = new Set<number>()
 let nextTerminalId = 1
@@ -588,7 +590,11 @@ function registerOwnerCleanup(webContents: WebContents): void {
   }
 
   ownersWithCleanup.add(webContents.id)
-  webContents.once('destroyed', () => destroyOwnerTerminals(webContents.id))
+  webContents.once('destroyed', () => {
+    ownersWithFocusedTerminal.delete(webContents.id)
+    pendingTerminalNavigationShortcuts.delete(webContents.id)
+    destroyOwnerTerminals(webContents.id)
+  })
 }
 
 function createSftpBrowserClient(configId: string): SftpClient {
@@ -3115,6 +3121,53 @@ function isFindShortcutInput(input: Electron.Input): boolean {
   return (input.meta || input.control) && input.key.toLowerCase() === 'f'
 }
 
+function getMacTerminalNavigationShortcutInput(input: Electron.Input): string | null {
+  if (
+    process.platform !== 'darwin' ||
+    (input.type !== 'rawKeyDown' && input.type !== 'keyDown') ||
+    input.control ||
+    input.shift
+  ) {
+    return null
+  }
+
+  const isArrowLeft = input.code === 'ArrowLeft' || input.key === 'ArrowLeft'
+  const isArrowRight = input.code === 'ArrowRight' || input.key === 'ArrowRight'
+
+  if (input.meta && !input.alt) {
+    if (isArrowLeft) {
+      return '\u001bOH'
+    }
+
+    if (isArrowRight) {
+      return '\u001bOF'
+    }
+  }
+
+  if (input.alt && !input.meta) {
+    if (isArrowLeft) {
+      return '\u001bb'
+    }
+
+    if (isArrowRight) {
+      return '\u001bf'
+    }
+  }
+
+  return null
+}
+
+function getTerminalNavigationShortcutSignature(input: Electron.Input): string {
+  return [
+    input.code,
+    input.key,
+    input.alt ? '1' : '0',
+    input.meta ? '1' : '0',
+    input.control ? '1' : '0',
+    input.shift ? '1' : '0'
+  ].join(':')
+}
+
 function createMainWindow(): BrowserWindow {
   const mainWindowBounds = getMainWindowBounds()
   const nextMainWindow = new BrowserWindow({
@@ -3160,6 +3213,47 @@ function createMainWindow(): BrowserWindow {
   })
 
   nextMainWindow.webContents.on('before-input-event', (event, input) => {
+    if (
+      input.type === 'keyUp' &&
+      (input.code === 'ArrowLeft' ||
+        input.code === 'ArrowRight' ||
+        input.key === 'ArrowLeft' ||
+        input.key === 'ArrowRight')
+    ) {
+      pendingTerminalNavigationShortcuts.delete(nextMainWindow.webContents.id)
+    }
+
+    const navigationShortcut = getMacTerminalNavigationShortcutInput(input)
+
+    if (
+      navigationShortcut !== null &&
+      ownersWithFocusedTerminal.has(nextMainWindow.webContents.id)
+    ) {
+      const shortcutSignature = getTerminalNavigationShortcutSignature(input)
+
+      event.preventDefault()
+
+      if (
+        input.type === 'keyDown' &&
+        pendingTerminalNavigationShortcuts.get(nextMainWindow.webContents.id) === shortcutSignature
+      ) {
+        pendingTerminalNavigationShortcuts.delete(nextMainWindow.webContents.id)
+        return
+      }
+
+      if (input.type === 'rawKeyDown') {
+        pendingTerminalNavigationShortcuts.set(nextMainWindow.webContents.id, shortcutSignature)
+      }
+
+      if (!nextMainWindow.webContents.isDestroyed()) {
+        nextMainWindow.webContents.send('terminal:navigation-shortcut', {
+          data: navigationShortcut
+        })
+      }
+
+      return
+    }
+
     if (!isFindShortcutInput(input)) {
       return
     }
@@ -3280,6 +3374,15 @@ app.whenReady().then(() => {
   )
   ipcMain.on('terminal:write', (_event, payload: { terminalId: number; data: string }) => {
     terminals.get(payload.terminalId)?.process.write(payload.data)
+  })
+  ipcMain.on('terminal:set-focused', (event, focused: boolean) => {
+    if (focused) {
+      ownersWithFocusedTerminal.add(event.sender.id)
+      return
+    }
+
+    ownersWithFocusedTerminal.delete(event.sender.id)
+    pendingTerminalNavigationShortcuts.delete(event.sender.id)
   })
   ipcMain.on(
     'terminal:resize',
