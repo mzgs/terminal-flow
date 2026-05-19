@@ -50,6 +50,7 @@ interface TerminalSession {
   cwdRefreshTimeout: NodeJS.Timeout | null
   lastCwd: string | null
   ownerId: number
+  preventShellEofExit: boolean
   process: IPty
   processGeneration: number
   rows: number
@@ -78,6 +79,7 @@ interface SftpBrowserSession {
 
 interface TerminalSpawnResult {
   cwd: string
+  preventShellEofExit: boolean
   process: IPty
   shellName: string
   title: string
@@ -149,6 +151,7 @@ const maxLocalTextFileBytes = 100 * 1024 * 1024
 const maxSshRemoteTextFileBytes = 16 * 1024 * 1024
 const defaultTerminalCols = 100
 const defaultTerminalRows = 30
+const terminalEndOfTransmissionInput = '\u0004'
 const defaultMainWindowWidth = 1000
 const defaultMainWindowHeight = 600
 const minMainWindowWidth = 640
@@ -314,6 +317,10 @@ function getTerminalCwd(): string {
 
 function formatShellName(shellPath: string): string {
   return basename(shellPath).replace(/\.exe$/i, '') || 'shell'
+}
+
+function normalizeProcessName(processName: string): string {
+  return formatShellName(processName.trim()).replace(/^-+/, '').toLowerCase()
 }
 
 function mergePathEntries(entries: string[]): string {
@@ -501,6 +508,7 @@ function spawnTerminalProcess(options?: TerminalCreateOptions): TerminalSpawnRes
     try {
       return {
         cwd,
+        preventShellEofExit: false,
         process: spawn(commandPath, options.args ?? [], {
           name: 'xterm-256color',
           cols: defaultTerminalCols,
@@ -526,6 +534,7 @@ function spawnTerminalProcess(options?: TerminalCreateOptions): TerminalSpawnRes
 
       return {
         cwd,
+        preventShellEofExit: true,
         process: spawn(shellPath, [], {
           name: 'xterm-256color',
           cols: defaultTerminalCols,
@@ -614,6 +623,14 @@ function resizeTerminal(terminalId: number, cols: number, rows: number): void {
 
     console.warn(`Failed to resize terminal ${terminalId}`, error)
   }
+}
+
+function shouldSuppressTerminalInput(session: TerminalSession, data: string): boolean {
+  if (!session.preventShellEofExit || data !== terminalEndOfTransmissionInput) {
+    return false
+  }
+
+  return normalizeProcessName(session.process.process) === normalizeProcessName(session.shellName)
 }
 
 function destroyOwnerTerminals(ownerId: number): void {
@@ -854,6 +871,7 @@ function createTerminal(
   const terminalId = nextTerminalId++
   const {
     cwd,
+    preventShellEofExit,
     process: terminalProcess,
     shellName,
     title,
@@ -864,6 +882,7 @@ function createTerminal(
     cwdRefreshTimeout: null,
     lastCwd: null,
     ownerId: webContents.id,
+    preventShellEofExit,
     process: terminalProcess,
     processGeneration: 0,
     rows: defaultTerminalRows,
@@ -1006,13 +1025,15 @@ function replaceTerminalProcess(
   options: TerminalCreateOptions
 ): void {
   const previousProcess = session.process
-  const { cwd, process: terminalProcess, shellName, trackCwd } = spawnTerminalProcess(options)
+  const { cwd, preventShellEofExit, process: terminalProcess, shellName, trackCwd } =
+    spawnTerminalProcess(options)
 
   stopTerminalCwdTracking(session)
 
   session.lastCwd = null
   session.process = terminalProcess
   session.processGeneration += 1
+  session.preventShellEofExit = preventShellEofExit
   session.shellName = shellName
   session.trackCwd = trackCwd
 
@@ -3572,7 +3593,13 @@ app.whenReady().then(() => {
     stageSessionSnapshot(snapshot)
   )
   ipcMain.on('terminal:write', (_event, payload: { terminalId: number; data: string }) => {
-    terminals.get(payload.terminalId)?.process.write(payload.data)
+    const session = terminals.get(payload.terminalId)
+
+    if (!session || shouldSuppressTerminalInput(session, payload.data)) {
+      return
+    }
+
+    session.process.write(payload.data)
   })
   ipcMain.on('terminal:set-focused', (event, focused: boolean) => {
     if (focused) {
