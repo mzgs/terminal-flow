@@ -80,6 +80,7 @@ import type { LucideIcon } from 'lucide-react'
 import { Reorder, useDragControls } from 'motion/react'
 import Modal from 'react-modal'
 import '@xterm/xterm/css/xterm.css'
+import type { AutomationRequest } from '../../shared/automation'
 import type {
   AppSettings,
   AppStartupMode,
@@ -136,6 +137,7 @@ interface TerminalRuntime {
 
 interface CreateTabOptions {
   createTerminal?: () => Promise<TerminalCreateResult>
+  initialCommand?: string
   restoreState?: RestorableTabState
   terminalCreateOptions?: TerminalCreateOptions
   title?: string
@@ -5311,6 +5313,7 @@ function SettingsDialog({
 
 function TerminalApp(): React.JSX.Element {
   const [isSessionHydrated, setIsSessionHydrated] = useState(false)
+  const [hasHydratedAutomation, setHasHydratedAutomation] = useState(false)
   const [tabs, setTabs] = useState<TabRecord[]>([])
   const [activeTabId, setActiveTabId] = useState<string | null>(null)
   const [isSearchOpen, setIsSearchOpen] = useState(false)
@@ -6723,9 +6726,10 @@ function TerminalApp(): React.JSX.Element {
         title: nextTitle
       })
 
-      if (createTerminal || terminalCreateOptions || trimmedTitle) {
+      if (createTerminal || terminalCreateOptions || trimmedTitle || options?.initialCommand) {
         pendingInitialPaneStateRef.current.set(tabId, {
           createTerminal,
+          initialCommand: options?.initialCommand,
           restoreState,
           terminalCreateOptions,
           title: trimmedTitle
@@ -6744,6 +6748,63 @@ function TerminalApp(): React.JSX.Element {
     },
     [defaultNewTabDirectory]
   )
+
+  const handleAutomationRequests = useCallback(
+    (requests: AutomationRequest[]): void => {
+      for (const request of requests) {
+        if (request.action !== 'new-terminal') {
+          continue
+        }
+
+        createTab({
+          ...(request.command ? { initialCommand: request.command } : {}),
+          ...(request.cwd
+            ? {
+                restoreState: { cwd: request.cwd, kind: 'local' },
+                terminalCreateOptions: { cwd: request.cwd }
+              }
+            : {}),
+          ...(request.title ? { title: request.title } : {})
+        })
+      }
+    },
+    [createTab]
+  )
+
+  useEffect(() => {
+    if (!isSessionHydrated) {
+      return
+    }
+
+    let isDisposed = false
+
+    const drainAutomationRequests = async (): Promise<void> => {
+      try {
+        const requests = await window.api.automation.drainRequests()
+
+        if (!isDisposed) {
+          handleAutomationRequests(requests)
+        }
+      } catch (error) {
+        console.error('Unable to receive TerminalFlow automation requests.', error)
+      } finally {
+        if (!isDisposed) {
+          setHasHydratedAutomation(true)
+        }
+      }
+    }
+
+    const disposeRequestsAvailable = window.api.automation.onRequestsAvailable(() => {
+      void drainAutomationRequests()
+    })
+
+    void drainAutomationRequests()
+
+    return () => {
+      isDisposed = true
+      disposeRequestsAvailable()
+    }
+  }, [handleAutomationRequests, isSessionHydrated])
 
   const createSplitPaneForTab = useCallback(
     (tabId: string, requestedOrientation: PaneSplitOrientation): void => {
@@ -7037,6 +7098,10 @@ function TerminalApp(): React.JSX.Element {
             pendingInitialPaneState?.title,
             paneId === tabId
           )
+
+          if (pendingInitialPaneState?.initialCommand) {
+            window.api.terminal.write(terminalId, `${pendingInitialPaneState.initialCommand}\r`)
+          }
         })
         .catch((error) => {
           const message = error instanceof Error ? error.message : String(error)
@@ -7368,6 +7433,7 @@ function TerminalApp(): React.JSX.Element {
 
     if (
       isSessionHydrated &&
+      hasHydratedAutomation &&
       tabs.length === 0 &&
       !isUnmountingRef.current &&
       !emptyStateCreateQueuedRef.current
@@ -7375,7 +7441,7 @@ function TerminalApp(): React.JSX.Element {
       emptyStateCreateQueuedRef.current = true
       createTab()
     }
-  }, [createTab, isSessionHydrated, tabs.length])
+  }, [createTab, hasHydratedAutomation, isSessionHydrated, tabs.length])
 
   useEffect(() => {
     const workspaceElement = workspaceRef.current

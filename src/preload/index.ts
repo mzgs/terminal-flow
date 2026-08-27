@@ -1,5 +1,6 @@
 import { clipboard, contextBridge, ipcRenderer, webUtils } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
+import type { AutomationApi, AutomationRequest } from '../shared/automation'
 import type { ClipboardApi } from '../shared/clipboard'
 import type { SettingsApi } from '../shared/settings'
 import type { SessionApi } from '../shared/session'
@@ -120,6 +121,20 @@ const clipboardApi: ClipboardApi = {
   writeText: (text) => clipboard.writeText(text)
 }
 
+const automation: AutomationApi = {
+  drainRequests: () =>
+    ipcRenderer.invoke('automation:drain-requests') as Promise<AutomationRequest[]>,
+  onRequestsAvailable: (callback) => {
+    const listener = (): void => callback()
+
+    ipcRenderer.on('automation:requests-available', listener)
+
+    return () => {
+      ipcRenderer.off('automation:requests-available', listener)
+    }
+  }
+}
+
 const ssh: SshApi = {
   connect: (configId, cwd) => ipcRenderer.invoke('ssh:connect', { configId, cwd }),
   createPath: (configId, path, isDirectory) =>
@@ -226,6 +241,7 @@ const ssh: SshApi = {
 }
 
 const api = {
+  automation,
   clipboard: clipboardApi,
   settings,
   session,

@@ -1,5 +1,9 @@
-appId: com.electron.app
+appId: com.terminalflow.app
 productName: TerminalFlow
+protocols:
+  - name: TerminalFlow automation
+    schemes:
+      - terminalflow
 directories:
   buildResources: build
 files:

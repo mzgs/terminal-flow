@@ -1,4 +1,5 @@
 import { ElectronAPI } from '@electron-toolkit/preload'
+import type { AutomationApi } from '../shared/automation'
 import type { ClipboardApi } from '../shared/clipboard'
 import type { SettingsApi } from '../shared/settings'
 import type { SessionApi } from '../shared/session'
@@ -14,6 +15,7 @@ declare global {
   interface Window {
     electron: ElectronAPI
     api: {
+      automation: AutomationApi
       clipboard: ClipboardApi
       settings: SettingsApi
       session: SessionApi

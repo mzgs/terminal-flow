@@ -19,6 +19,7 @@ import { spawn, type IPty } from 'node-pty'
 import SftpClient from 'ssh2-sftp-client'
 import type { ConnectConfig } from 'ssh2'
 import icon from '../../resources/icon.png?asset'
+import type { AutomationRequest } from '../shared/automation'
 import type {
   AppSettings,
   AppStartupMode,
@@ -125,6 +126,7 @@ interface SshDownloadPlan {
 const terminals = new Map<number, TerminalSession>()
 const ownersWithCleanup = new Set<number>()
 const ownersWithFocusedTerminal = new Set<number>()
+const pendingAutomationRequests: AutomationRequest[] = []
 const pendingTerminalNavigationShortcuts = new Map<number, string>()
 const sftpBrowserSessions = new Map<string, SftpBrowserSession>()
 const ownersWithSftpBrowserCleanup = new Set<number>()
@@ -156,6 +158,115 @@ const defaultMainWindowWidth = 1000
 const defaultMainWindowHeight = 600
 const minMainWindowWidth = 640
 const minMainWindowHeight = 480
+const automationProtocol = 'terminalflow'
+const maxAutomationCommandLength = 32_768
+const maxAutomationPathLength = 4_096
+const maxAutomationTitleLength = 256
+const hasSingleInstanceLock = app.requestSingleInstanceLock()
+
+if (!hasSingleInstanceLock) {
+  app.quit()
+}
+
+function getLimitedAutomationParameter(
+  url: URL,
+  name: string,
+  maxLength: number
+): string | undefined {
+  const value = url.searchParams.get(name)?.trim()
+
+  if (!value) {
+    return undefined
+  }
+
+  if (value.length > maxLength) {
+    throw new Error(`Automation parameter "${name}" is too long.`)
+  }
+
+  return value
+}
+
+function parseAutomationUrl(rawUrl: string): AutomationRequest | null {
+  let url: URL
+
+  try {
+    url = new URL(rawUrl)
+  } catch {
+    return null
+  }
+
+  if (url.protocol !== `${automationProtocol}:`) {
+    return null
+  }
+
+  const action = (url.hostname || url.pathname.replace(/^\/+/, '')).toLowerCase()
+
+  if (action === 'activate') {
+    return {
+      action: 'activate',
+      id: randomUUID()
+    }
+  }
+
+  if (action !== 'new-terminal') {
+    throw new Error(`Unsupported TerminalFlow automation action: ${action || '(empty)'}`)
+  }
+
+  const command = getLimitedAutomationParameter(url, 'command', maxAutomationCommandLength)
+  const cwd = getLimitedAutomationParameter(url, 'cwd', maxAutomationPathLength)
+  const title = getLimitedAutomationParameter(url, 'title', maxAutomationTitleLength)
+
+  if (cwd && !isDirectory(cwd)) {
+    throw new Error(`Automation working directory does not exist: ${cwd}`)
+  }
+
+  return {
+    action: 'new-terminal',
+    ...(command ? { command } : {}),
+    ...(cwd ? { cwd } : {}),
+    id: randomUUID(),
+    ...(title ? { title } : {})
+  }
+}
+
+function focusMainWindow(): void {
+  const window = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
+
+  if (!window) {
+    return
+  }
+
+  if (window.isMinimized()) {
+    window.restore()
+  }
+
+  window.show()
+  window.focus()
+}
+
+function queueAutomationUrl(rawUrl: string): void {
+  try {
+    const request = parseAutomationUrl(rawUrl)
+
+    if (!request) {
+      return
+    }
+
+    if (request.action === 'new-terminal') {
+      pendingAutomationRequests.push(request)
+    }
+
+    focusMainWindow()
+
+    for (const window of BrowserWindow.getAllWindows()) {
+      if (!window.webContents.isDestroyed()) {
+        window.webContents.send('automation:requests-available')
+      }
+    }
+  } catch (error) {
+    console.warn(`Unable to handle automation URL: ${rawUrl}`, error)
+  }
+}
 
 function ensureNodePtyHelpersExecutable(): void {
   if (process.platform === 'win32') {
@@ -3549,6 +3660,19 @@ function removeSshConfig(webContents: WebContents, configId: string): void {
   }
 }
 
+app.on('open-url', (event, url) => {
+  event.preventDefault()
+  queueAutomationUrl(url)
+})
+
+app.on('second-instance', (_event, argv) => {
+  for (const argument of argv) {
+    queueAutomationUrl(argument)
+  }
+
+  focusMainWindow()
+})
+
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
@@ -3559,7 +3683,11 @@ app.whenReady().then(() => {
   loadPersistedSession()
 
   // Set app user model id for windows
-  electronApp.setAppUserModelId('com.electron')
+  electronApp.setAppUserModelId('com.terminalflow.app')
+
+  if (!app.setAsDefaultProtocolClient(automationProtocol)) {
+    console.warn(`Unable to register the ${automationProtocol}:// URL protocol.`)
+  }
 
   if (process.platform === 'darwin' && app.dock) {
     app.dock.setIcon(icon)
@@ -3575,6 +3703,7 @@ app.whenReady().then(() => {
   ipcMain.handle('terminal:create', (event, options?: TerminalCreateOptions) =>
     createTerminal(event.sender, options)
   )
+  ipcMain.handle('automation:drain-requests', () => pendingAutomationRequests.splice(0))
   ipcMain.handle('shell:open-external', (_event, url: string) => openExternalUrl(url))
   ipcMain.handle('shell:open-path', (_event, path: string) => openShellPath(path))
   ipcMain.handle('shell:pick-paths', (_event, options?: ShellPickPathsOptions) =>
@@ -3670,6 +3799,10 @@ app.whenReady().then(() => {
   )
 
   createMainWindow()
+
+  for (const argument of process.argv) {
+    queueAutomationUrl(argument)
+  }
 
   app.on('before-quit', () => {
     flushStagedSessionSnapshot()

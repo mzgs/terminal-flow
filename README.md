@@ -62,6 +62,30 @@ If macOS blocks the app when opening it, clear the app's extended attributes bef
 xattr -cr /Applications/TerminalFlow.app
 ```
 
+### AppleScript automation
+
+The packaged macOS app registers the `terminalflow://` URL scheme. AppleScript can use it to
+activate TerminalFlow or open a new terminal tab:
+
+```applescript
+-- Bring TerminalFlow to the front.
+open location "terminalflow://activate"
+
+-- Open a terminal with the app's default working directory.
+open location "terminalflow://new-terminal"
+
+-- URL query values must be percent-encoded.
+open location "terminalflow://new-terminal?cwd=%2Ftmp&title=Temporary%20shell"
+
+-- Open a terminal and submit an initial command.
+open location "terminalflow://new-terminal?cwd=%2Ftmp&command=pwd%20%26%26%20ls"
+```
+
+Supported `new-terminal` query parameters are `cwd`, `title`, and `command`. The working
+directory must already exist. Because `command` runs in a local shell, only open automation URLs
+you trust. Build and install the macOS app once before running these scripts so Launch Services
+can associate the URL scheme with TerminalFlow.
+
 ## Stack
 
 - Electron
