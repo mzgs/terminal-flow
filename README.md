@@ -86,6 +86,26 @@ directory must already exist. Because `command` runs in a local shell, only open
 you trust. Build and install the macOS app once before running these scripts so Launch Services
 can associate the URL scheme with TerminalFlow.
 
+#### Open TerminalFlow at the current Finder folder
+
+The project includes a Finder helper at `scripts/open-terminalflow-here.applescript`. It opens a
+new local tab at the front Finder window's folder, or at the Desktop when Finder has no open
+windows. In addition to supplying `cwd`, it submits a safely shell-quoted `cd` command so shells
+that change directory during startup still finish in the requested folder.
+
+Build the helper app and its portable ZIP on macOS:
+
+```bash
+npm run build:finder-helper
+```
+
+The artifacts are written to `dist/finder-helper/`. The helper uses TerminalFlow's app icon and
+runs as a background UI element, so it does not appear in the Dock when launched. It uses an
+ad-hoc signature, so a copy
+opened on another Mac must be approved once in **System Settings → Privacy & Security → Open
+Anyway**. TerminalFlow must already be installed on that Mac. For convenient access, hold Command
+while dragging the helper app to Finder's toolbar.
+
 ## Stack
 
 - Electron

@@ -21,6 +21,7 @@
     "build:unpack": "npm run build && electron-builder --dir",
     "build:win": "npm run build && electron-builder --win",
     "build:mac": "electron-vite build && electron-builder --mac",
+    "build:finder-helper": "zsh ./scripts/build-open-terminalflow-here.sh",
     "build:linux": "electron-vite build && electron-builder --linux"
   },
   "dependencies": {
