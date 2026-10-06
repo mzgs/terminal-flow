@@ -1547,12 +1547,7 @@ impl Render for Workspace {
                                                     );
                                                 }
                                             }
-                                            menu.separator()
-                                                .menu_with_disabled("Split right", Box::new(crate::SplitRight), !splittable)
-                                                .menu_with_disabled("Split down", Box::new(crate::SplitDown), !splittable)
-                                                .menu_with_disabled("Next pane", Box::new(crate::NextPane), !has_splits)
-                                                .menu_with_disabled("Previous pane", Box::new(crate::PreviousPane), !has_splits)
-                                                .menu("Close pane", Box::new(crate::ClosePane))
+                                            menu
                                         }
                                     }),
                             ),
@@ -2721,14 +2716,9 @@ mod tests {
             assert_eq!(server.label(), Some("Ubuntu Home, root@localhost:2222"));
             assert!(settings.bottom() <= add.top());
             assert!(add.bottom() < server.bounds().top());
-            assert_eq!(
-                window.within("popup-menu").find(5usize).label(),
-                Some("Split right")
-            );
-            assert_eq!(
-                window.within("popup-menu").find(7usize).label(),
-                Some("Next pane")
-            );
+            for ix in 5usize..10 {
+                assert!(window.within("popup-menu").try_find(ix).is_none());
+            }
             window.press("escape", cx);
         })
         .unwrap();
