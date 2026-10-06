@@ -12,9 +12,10 @@ use gpui_kit::{
         motion::{Transition, transition},
     },
     component::{
-        ActiveTheme, Disableable, Icon, IconName, Sizable, TitleBar,
+        ActiveTheme, Disableable, Icon, IconName, Sizable, TitleBar, WindowExt,
         button::{Button, ButtonVariants},
         menu::{ContextMenuExt, DropdownMenu, PopupMenuItem},
+        notification::Notification,
         resizable::{h_resizable, resizable_panel},
     },
     prelude::FluentBuilder,
@@ -763,25 +764,79 @@ impl Workspace {
     }
 
     fn new_tab(&mut self, _: &NewTab, window: &mut Window, cx: &mut Context<Self>) {
+        self.new_local_tab(
+            self.settings.default_directory.clone(),
+            None,
+            None,
+            window,
+            cx,
+        );
+    }
+
+    pub(super) fn open_urls(
+        &mut self,
+        urls: Vec<String>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        for url in urls {
+            match crate::automation::Request::parse(&url) {
+                Ok(crate::automation::Request::Activate) => {}
+                Ok(crate::automation::Request::NewTerminal {
+                    directory,
+                    title,
+                    command,
+                }) => {
+                    self.new_local_tab(
+                        directory.or_else(|| self.settings.default_directory.clone()),
+                        title,
+                        command,
+                        window,
+                        cx,
+                    );
+                }
+                Err(error) => window.push_notification(
+                    Notification::error(format!("Couldn’t open TerminalFlow link: {error}")),
+                    cx,
+                ),
+            }
+        }
+        window.activate_window();
+        cx.activate(true);
+    }
+
+    fn new_local_tab(
+        &mut self,
+        directory: Option<std::path::PathBuf>,
+        title: Option<String>,
+        command: Option<String>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let snapshot = TabSnapshot {
             id: uuid::Uuid::new_v4().to_string(),
-            source: TabSource::Local {
-                directory: self.settings.default_directory.clone(),
-            },
+            source: TabSource::Local { directory },
             output: vec![],
             font_scale: 1.,
             scroll_offset: 0.,
             browser: Default::default(),
         };
         let terminal = cx.new(|cx| {
-            TerminalView::configured(
+            let mut terminal = TerminalView::configured(
                 snapshot,
                 None,
                 self.store.clone(),
                 &self.settings,
                 window,
                 cx,
-            )
+            );
+            terminal.custom_title = title;
+            if let Some(command) = command
+                && let Err(error) = terminal.send_command(&command, None)
+            {
+                terminal.status = format!("Couldn’t run link command: {error}");
+            }
+            terminal
         });
         let id = terminal.entity_id();
         self.push_terminal(terminal, window, cx);
@@ -973,6 +1028,9 @@ impl Workspace {
     }
 
     fn title(terminal: &TerminalView) -> String {
+        if let Some(title) = &terminal.custom_title {
+            return title.clone();
+        }
         if let Some(profile) = &terminal.ssh_profile {
             return profile.name.clone();
         }
@@ -1709,6 +1767,63 @@ mod tests {
             Root::new(view, window, cx)
         });
         (handle, workspace.unwrap())
+    }
+
+    #[gpui_kit::test]
+    fn automation_opens_a_focused_local_tab_and_runs_the_command_once(cx: &mut TestAppContext) {
+        let directory =
+            std::env::temp_dir().join(format!("terminalflow + 密碼 {}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&directory).unwrap();
+        let directory = directory.canonicalize().unwrap();
+        let (handle, workspace) = open(cx);
+        cx.update_window(handle.into(), |_, window, cx| {
+            window.render_frame(cx);
+            let first = workspace.read(cx).tabs[0].active_terminal().clone();
+            let (input, _) = capture(&first, cx);
+            workspace.update(cx, |view, cx| view.open_urls(vec!["terminalflow://activate".into()], window, cx));
+            assert_eq!(workspace.read(cx).tabs.len(), 1);
+            assert_eq!(workspace.read(cx).active, first.entity_id());
+
+            workspace.update(cx, |view, cx| view.open_urls(vec!["terminalflow://new-terminal?cwd=relative&command=touch%20bad".into()], window, cx));
+            assert_eq!(workspace.read(cx).tabs.len(), 1);
+            assert!(input.try_recv().is_err());
+
+            let mut url = gpui_kit::http_client::Url::parse("terminalflow://new-terminal").unwrap();
+            url.query_pairs_mut()
+                .append_pair("cwd", directory.to_str().unwrap())
+                .append_pair("title", "Build + 密碼")
+                .append_pair("command", "printf '%s' \"$PWD\" > result.txt\nprintf '\\nAUTOMATION_OK\\n'");
+            workspace.update(cx, |view, cx| view.open_urls(vec![url.into()], window, cx));
+            assert_eq!(workspace.read(cx).tabs.len(), 2);
+            let terminal = workspace.read(cx).tabs[1].active_terminal().clone();
+            assert_eq!(workspace.read(cx).active, terminal.entity_id());
+            assert_eq!(Workspace::title(terminal.read(cx)), "Build + 密碼");
+            assert!(terminal.read(cx).focus.is_focused(window));
+            assert!(matches!(&terminal.read(cx).source, TabSource::Local { directory: Some(cwd) } if cwd == &directory));
+            assert!(input.try_recv().is_err());
+
+            terminal.update(cx, |view, _| {
+                let session = view.session.as_mut().unwrap();
+                let deadline = Instant::now() + Duration::from_secs(5);
+                let mut output = Vec::new();
+                while !String::from_utf8_lossy(&output).contains("\r\nAUTOMATION_OK\r\n") {
+                    match session.output.recv_timeout(deadline.saturating_duration_since(Instant::now())).unwrap() {
+                        Output::Bytes(bytes) => output.extend(bytes),
+                        _ => panic!("Shell exited before running the link command"),
+                    }
+                }
+            });
+            assert_eq!(std::fs::read_to_string(directory.join("result.txt")).unwrap(), directory.to_str().unwrap());
+            // Activating the app again must neither add a tab nor replay the command.
+            std::fs::remove_file(directory.join("result.txt")).unwrap();
+            workspace.update(cx, |view, cx| view.open_urls(vec!["terminalflow://activate".into()], window, cx));
+            assert_eq!(workspace.read(cx).tabs.len(), 2);
+            assert!(!directory.join("result.txt").exists());
+            window.render_frame(cx);
+            assert_eq!(window.find("terminal").focused(), Some(true));
+            window.remove_window();
+        }).unwrap();
+        std::fs::remove_dir_all(directory).unwrap();
     }
 
     #[gpui_kit::test]

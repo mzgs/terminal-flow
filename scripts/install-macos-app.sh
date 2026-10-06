@@ -2,7 +2,7 @@
 set -eu
 cd "$(dirname "$0")/.."
 cargo build --locked
-bundle="target/TerminalFlow.app"
+bundle="/Applications/TerminalFlow.app"
 mkdir -p "$bundle/Contents/MacOS"
 cp target/debug/local-terminal "$bundle/Contents/MacOS/local-terminal.new"
 mv "$bundle/Contents/MacOS/local-terminal.new" "$bundle/Contents/MacOS/local-terminal"
@@ -20,8 +20,20 @@ cat > "$bundle/Contents/Info.plist" <<'PLIST'
 <key>CFBundleIconFile</key><string>AppIcon.icns</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleVersion</key><string>0.1.0</string>
+<key>CFBundleURLTypes</key><array><dict>
+<key>CFBundleURLName</key><string>com.local-terminal.app.automation</string>
+<key>CFBundleTypeRole</key><string>Shell</string>
+<key>CFBundleURLSchemes</key><array><string>terminalflow</string></array>
+</dict></array>
 <key>NSHighResolutionCapable</key><true/>
 <key>NSPrincipalClass</key><string>NSApplication</string>
 </dict></plist>
 PLIST
-printf 'Created %s\n' "$bundle"
+helper="/Applications/TerminalFlow Finder.app"
+osacompile -o "$helper" scripts/finder-helper.applescript
+plutil -replace CFBundleIdentifier -string com.local-terminal.finder "$helper/Contents/Info.plist"
+plutil -replace NSAppleEventsUsageDescription -string 'Opens TerminalFlow at the current Finder folder.' "$helper/Contents/Info.plist"
+cp assets/AppIcon.icns "$helper/Contents/Resources/applet.icns"
+codesign --force --sign - "$helper"
+/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$bundle"
+printf 'Installed %s\n' "$bundle" "$helper"

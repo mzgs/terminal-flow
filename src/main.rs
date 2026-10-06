@@ -1,4 +1,5 @@
 mod appearance;
+mod automation;
 #[cfg(test)]
 mod crash_tests;
 mod dialogs;
@@ -32,7 +33,7 @@ use portable_pty::CommandBuilder;
 use selection::{CellPosition, Selection, SelectionMode};
 use session::{Output, Session};
 use std::{
-    cell::Cell,
+    cell::{Cell, RefCell},
     ops::Range,
     rc::Rc,
     sync::mpsc::TryRecvError,
@@ -137,6 +138,8 @@ struct TerminalView {
     browser_snapshot: storage::BrowserSnapshot,
     _browser_subscription: Option<Subscription>,
     saved_id: String,
+    // ponytail: URL titles live with the tab; add to TabSnapshot if restore needs custom titles.
+    custom_title: Option<String>,
     source: TabSource,
     ssh_profile: Option<SshProfile>,
     ssh_host_key_recovery: ssh::HostKeyRecovery,
@@ -257,6 +260,7 @@ impl TerminalView {
             browser_snapshot: snapshot.browser.clone(),
             _browser_subscription: browser_subscription,
             saved_id: snapshot.id,
+            custom_title: None,
             source: snapshot.source,
             ssh_profile: profile,
             ssh_host_key_recovery: ssh::HostKeyRecovery::default(),
@@ -2657,9 +2661,40 @@ fn main() {
         return;
     }
     let preview = std::env::args_os().any(|arg| arg == "--preview");
-    gpui_kit::application()
-        .with_assets(ssh_icons::Assets)
-        .run(move |cx| {
+    let application = gpui_kit::application().with_assets(ssh_icons::Assets);
+    let pending_urls = Rc::new(RefCell::new(Vec::<String>::new()));
+    let url_target = Rc::new(RefCell::new(
+        None::<(AnyWindowHandle, WeakEntity<Workspace>, AsyncApp)>,
+    ));
+    application.on_open_urls({
+        let pending_urls = pending_urls.clone();
+        let url_target = url_target.clone();
+        move |urls| {
+            pending_urls.borrow_mut().extend(urls);
+            if let Some((handle, workspace, cx)) = url_target.borrow().clone() {
+                let urls = std::mem::take(&mut *pending_urls.borrow_mut());
+                // Apple events can arrive inside an app update; defer to avoid reentrant borrowing.
+                cx.spawn(async move |cx| {
+                    let _ = cx.update_window(handle, |_, window, cx| {
+                        let _ = workspace.update(cx, |view, cx| view.open_urls(urls, window, cx));
+                    });
+                })
+                .detach();
+            }
+        }
+    });
+    application.on_reopen({
+        let url_target = url_target.clone();
+        move |cx| {
+            if let Some((handle, _, _)) = &*url_target.borrow() {
+                let _ = cx.update_window(*handle, |_, window, cx| {
+                    window.activate_window();
+                    cx.activate(true);
+                });
+            }
+        }
+    });
+    application.run(move |cx| {
             gpui_kit::init(cx);
             appearance::register_fonts(cx).expect("Couldn’t load bundled terminal fonts");
             Theme::change(ThemeMode::Dark, None, cx);
@@ -2769,11 +2804,22 @@ fn main() {
                 }),
                 ..TitleBar::window_options()
             };
-            if let Err(error) = gpui_kit::open_window(options, cx, |window, cx| {
+            match gpui_kit::open_window(options, cx, |window, cx| {
                 cx.new(|cx| Workspace::restore(store, settings, snapshot, error, window, cx))
             }) {
+                Ok((handle, workspace)) => {
+                    *url_target.borrow_mut() = Some((handle, workspace.downgrade(), cx.to_async()));
+                    let urls = std::mem::take(&mut *pending_urls.borrow_mut());
+                    if !urls.is_empty() {
+                        let _ = cx.update_window(handle, |_, window, cx| {
+                            workspace.update(cx, |view, cx| view.open_urls(urls, window, cx));
+                        });
+                    }
+                }
+                Err(error) => {
                 eprintln!("Couldn’t open the terminal window: {error:#}");
                 cx.quit();
+                }
             }
             cx.activate(true);
         });

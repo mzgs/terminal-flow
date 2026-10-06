@@ -142,6 +142,12 @@ Session restore reopens saved local/SSH tabs and restores their recorded directo
 - The project includes an AppleScript Finder helper to open TerminalFlow at the current Finder folder. It is built as a separate helper app, rather than being a built-in Finder toolbar button.
 - Packaging is configured for macOS, Windows, and Linux. This analysis verifies the installed macOS build only.
 
+The Rust app implements these automation URLs through macOS Apple events,
+including links received during launch. `scripts/install-macos-app.sh` registers
+the scheme in the app bundle and installs `TerminalFlow Finder.app`; the helper
+uses the front Finder window's folder, with Desktop as a fallback. See
+[macOS automation](README.md#macos-automation) for usage and parameter behavior.
+
 ### Main keyboard shortcuts
 
 “Primary” means Cmd on macOS and Ctrl elsewhere; the renderer accepts either modifier for these actions.
