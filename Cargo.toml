@@ -1,0 +1,28 @@
+[package]
+name = "local-terminal"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+publish = false
+
+[dependencies]
+anyhow = "1"
+base64 = "0.22"
+dirs = "6"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+uuid = { version = "1", features = ["v4"] }
+gpui-kit = { version = "0.7.1", features = ["tree-sitter-languages"] }
+portable-pty = "0.9"
+ring = "0.17"
+procinfo = { git = "https://github.com/wezterm/wezterm", rev = "cab25161054c50fd6c705db4ceefef0f1e5a9575", default-features = false }
+wezterm-term = { git = "https://github.com/wezterm/wezterm", rev = "cab25161054c50fd6c705db4ceefef0f1e5a9575" }
+
+wezterm-surface = { git = "https://github.com/wezterm/wezterm", rev = "cab25161054c50fd6c705db4ceefef0f1e5a9575" }
+
+[dev-dependencies]
+gpui-kit = { version = "0.7.1", features = ["test-support"] }
+
+[profile.dev]
+debug = 0
+incremental = false
