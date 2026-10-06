@@ -75,6 +75,11 @@ pub(super) fn open(workspace: &Entity<Workspace>, window: &mut Window, cx: &mut 
             ("Find previous", ArrowUp, Box::new(crate::FindPrevious)),
             ("Copy", Copy, Box::new(crate::Copy)),
             ("Copy screen", Copy, Box::new(crate::CopyScreen)),
+            (
+                "Open selected link or file",
+                IconName::ExternalLink,
+                Box::new(crate::OpenSelection),
+            ),
             ("Paste", ClipboardPaste, Box::new(crate::Paste)),
             ("Select all", SquareDashed, Box::new(crate::SelectAll)),
             (

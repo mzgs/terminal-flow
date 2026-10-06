@@ -4,6 +4,7 @@ mod automation;
 mod crash_tests;
 mod dialogs;
 mod editor;
+mod links;
 mod palette;
 mod search;
 mod selection;
@@ -62,6 +63,7 @@ actions!(
         CopyScreen,
         DownloadSelection,
         EditSelection,
+        OpenSelection,
         ExtractSelection,
         RunSelection,
         SearchSelection,
@@ -184,6 +186,7 @@ struct TerminalView {
     selection: Option<Selection>,
     drag_selection: Option<Selection>,
     mouse_button: Option<MouseButton>,
+    pending_link: Option<(Point<Pixels>, links::Link)>,
     font_scale: f32,
     wheel_remainder: f32,
     _output_task: Task<()>,
@@ -305,6 +308,7 @@ impl TerminalView {
             selection: None,
             drag_selection: None,
             mouse_button: None,
+            pending_link: None,
             font_scale: snapshot.font_scale,
             wheel_remainder: 0.,
             _output_task: task,
@@ -849,6 +853,14 @@ impl TerminalView {
             anyhow::bail!("Select a filename or path to edit.");
         };
         let selected = selection.text(&session.terminal);
+        self.file_path(&selected)
+    }
+
+    fn file_path(&self, selected: &str) -> anyhow::Result<std::path::PathBuf> {
+        let session = self
+            .session
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("The terminal is unavailable."))?;
         if matches!(self.source, TabSource::Ssh { .. }) {
             let directory = session
                 .terminal
@@ -859,11 +871,18 @@ impl TerminalView {
                     .as_ref()
                     .and_then(|path| path.to_str())
                     .unwrap_or_default(),
-                &selected,
+                selected,
             )
             .map(std::path::PathBuf::from);
         }
-        let path = std::path::PathBuf::from(ssh::selected_path(&selected)?);
+        let selected = ssh::selected_path(selected)?;
+        let path = if let Some(relative) = selected.strip_prefix("~/") {
+            std::env::home_dir()
+                .ok_or_else(|| anyhow::anyhow!("The home directory is unavailable."))?
+                .join(relative)
+        } else {
+            std::path::PathBuf::from(selected)
+        };
         anyhow::ensure!(path.file_name().is_some(), "Select a file to edit.");
         if path.is_absolute() {
             return Ok(path);
@@ -876,8 +895,17 @@ impl TerminalView {
     fn edit_selection(&mut self, _: &EditSelection, window: &mut Window, cx: &mut Context<Self>) {
         window.focus(&self.focus, cx);
         self.read_output(cx);
+        self.edit_file(self.selected_file_path(), window, cx);
+    }
+
+    fn edit_file(
+        &mut self,
+        path: anyhow::Result<std::path::PathBuf>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let target = (|| -> anyhow::Result<editor::Target> {
-            let path = self.selected_file_path()?;
+            let path = path?;
             if matches!(self.source, TabSource::Local { .. }) {
                 return Ok(editor::Target::Local(path));
             }
@@ -906,6 +934,41 @@ impl TerminalView {
                 cx.notify();
             }
         }
+    }
+
+    fn open_link(&mut self, target: links::Target, window: &mut Window, cx: &mut Context<Self>) {
+        match target {
+            links::Target::Url(url) => cx.open_url(&url),
+            links::Target::File(path) => self.edit_file(self.file_path(&path), window, cx),
+        }
+    }
+
+    fn open_selection(&mut self, _: &OpenSelection, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(target) = self.selected_link() {
+            self.open_link(target, window, cx);
+        }
+    }
+
+    fn selected_link(&self) -> Option<links::Target> {
+        let selection = self.selection?;
+        let terminal = &self.session.as_ref()?.terminal;
+        if let Some(link) = links::at(terminal, selection.bounds().0)
+            && link.selection.bounds() == selection.bounds()
+        {
+            return Some(link.target);
+        }
+        links::Target::parse(&selection.text(terminal))
+    }
+
+    fn link_at(&self, position: Point<Pixels>) -> Option<links::Link> {
+        if !self.bounds.contains(&position) {
+            return None;
+        }
+        let terminal = &self.session.as_ref()?.terminal;
+        if terminal.is_mouse_grabbed() {
+            return None;
+        }
+        links::at(terminal, self.cell_at(position)?)
     }
 
     fn selected_command(&self, extract: bool) -> anyhow::Result<String> {
@@ -1363,6 +1426,16 @@ impl TerminalView {
         window.focus(&self.focus, cx);
         window.prevent_default();
         self.mouse_button = None;
+        self.pending_link = None;
+        if event.button == MouseButton::Left
+            && link_modifier(event.modifiers)
+            && let Some(link) = self.link_at(event.position)
+        {
+            self.drag_selection = None;
+            self.pending_link = Some((event.position, link));
+            cx.notify();
+            return;
+        }
         if self.send_mouse(
             MouseEventKind::Press,
             terminal_mouse_button(Some(event.button)),
@@ -1398,6 +1471,15 @@ impl TerminalView {
     }
 
     fn mouse_move(&mut self, event: &MouseMoveEvent, _: &mut Window, cx: &mut Context<Self>) {
+        if let Some((origin, _)) = &self.pending_link
+            && ((event.position.x - origin.x).abs() > px(3.)
+                || (event.position.y - origin.y).abs() > px(3.))
+        {
+            self.pending_link = None;
+        }
+        if link_modifier(event.modifiers) {
+            cx.notify();
+        }
         if event.dragging()
             && let Some(mut selection) = self.drag_selection
         {
@@ -1423,7 +1505,16 @@ impl TerminalView {
         }
     }
 
-    fn mouse_up(&mut self, event: &MouseUpEvent, _: &mut Window, cx: &mut Context<Self>) {
+    fn mouse_up(&mut self, event: &MouseUpEvent, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some((_, link)) = self.pending_link.take()
+            && event.button == MouseButton::Left
+            && link_modifier(event.modifiers)
+            && let Some(current) = self.link_at(event.position)
+            && current.target == link.target
+            && current.selection.bounds() == link.selection.bounds()
+        {
+            self.open_link(current.target, window, cx);
+        }
         if self.mouse_button.take().is_some() {
             self.send_mouse(
                 MouseEventKind::Release,
@@ -1639,6 +1730,16 @@ fn visible_range(session: &Session, offset: f32) -> Range<usize> {
     start..end
 }
 
+fn link_modifier(modifiers: Modifiers) -> bool {
+    !modifiers.shift
+        && !modifiers.alt
+        && if cfg!(target_os = "macos") {
+            modifiers.platform
+        } else {
+            modifiers.control
+        }
+}
+
 fn terminal_mouse_button(button: Option<MouseButton>) -> TerminalMouseButton {
     match button {
         Some(MouseButton::Left) => TerminalMouseButton::Left,
@@ -1742,7 +1843,7 @@ fn dropped_path_text(paths: &[std::path::PathBuf]) -> anyhow::Result<String> {
 }
 
 impl Render for TerminalView {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let entity = cx.entity();
         let paint_entity = entity.clone();
         let scrollbar = self.scrollbar.clone();
@@ -1753,6 +1854,11 @@ impl Render for TerminalView {
         let palette = self.appearance.palette();
         let menu_focus = self.focus.clone();
         let has_selection = self.selection.is_some();
+        let show_open_link = self
+            .selected_link()
+            .is_some_and(|target| matches!(target, links::Target::Url(_)));
+        let hovered_link =
+            link_modifier(window.modifiers()) && self.link_at(window.mouse_position()).is_some();
         let show_download = matches!(self.source, TabSource::Ssh { .. }) && has_selection;
         let download_disabled = !self.running
             || self.downloading
@@ -1811,6 +1917,8 @@ impl Render for TerminalView {
                     .on_action(cx.listener(Self::copy))
                     .on_action(cx.listener(Self::download_selection))
                     .on_action(cx.listener(Self::edit_selection))
+                    .on_action(cx.listener(Self::open_selection))
+                    .on_modifiers_changed(cx.listener(|_, _, _, cx| cx.notify()))
                     .on_action(cx.listener(|view, _: &ExtractSelection, window, cx| {
                         view.execute_selection(true, window, cx)
                     }))
@@ -1832,7 +1940,9 @@ impl Render for TerminalView {
                     .on_action(cx.listener(Self::paste))
                     .on_drop(cx.listener(Self::drop_paths))
                     .on_action(cx.listener(Self::restart))
-                    .cursor(if mouse_grabbed {
+                    .cursor(if hovered_link {
+                        CursorStyle::PointingHand
+                    } else if mouse_grabbed {
                         CursorStyle::Arrow
                     } else {
                         CursorStyle::IBeam
@@ -1951,6 +2061,13 @@ impl Render for TerminalView {
                                                 IconName::Pencil,
                                                 Box::new(EditSelection),
                                                 edit_disabled,
+                                            )
+                                        })
+                                        .when(show_open_link, |menu| {
+                                            menu.menu_with_icon(
+                                                "Open link",
+                                                IconName::ExternalLink,
+                                                Box::new(OpenSelection),
                                             )
                                         })
                                         .when(show_extract, |menu| {
@@ -2213,6 +2330,9 @@ fn paint_terminal(
         return;
     };
     let terminal = &session.terminal;
+    let hovered_link = link_modifier(window.modifiers())
+        .then(|| view.link_at(window.mouse_position()))
+        .flatten();
     let palette = terminal.palette();
     window.paint_quad(fill(bounds, hsla_color(palette.background)));
     let cell_size = view.cell_size;
@@ -2369,7 +2489,13 @@ fn paint_terminal(
                 font,
                 color: foreground,
                 background_color: None,
-                underline: (attrs.underline() != Underline::None).then_some(UnderlineStyle {
+                underline: (attrs.underline() != Underline::None
+                    || hovered_link.as_ref().is_some_and(|link| {
+                        link.selection
+                            .columns(stable_row, screen.physical_cols)
+                            .contains(&cell.cell_index())
+                    }))
+                .then_some(UnderlineStyle {
                     color: Some(foreground),
                     thickness: px(1.),
                     wavy: false,
@@ -2601,6 +2727,8 @@ fn bind_keys(cx: &mut App) {
         #[cfg(not(target_os = "macos"))]
         KeyBinding::new("ctrl-c", NoAction, Some("Terminal")),
         KeyBinding::new("cmd-c", Copy, Some("Terminal")),
+        KeyBinding::new("cmd-enter", OpenSelection, Some("Terminal")),
+        KeyBinding::new("ctrl-shift-enter", OpenSelection, Some("Terminal")),
         KeyBinding::new("cmd-shift-c", Copy, Some("Terminal")),
         KeyBinding::new("cmd-alt-c", CopyScreen, Some("Terminal")),
         KeyBinding::new("cmd-a", SelectAll, Some("Terminal")),
@@ -2913,6 +3041,120 @@ mod tests {
             Root::new(workspace, window, cx)
         });
         (handle, view.unwrap(), bytes)
+    }
+
+    #[gpui_kit::test]
+    fn terminal_links_open_by_modifier_click_and_keyboard_without_shell_input(
+        cx: &mut TestAppContext,
+    ) {
+        let (handle, view, bytes) = open_terminal(cx);
+        let (_output, receiver) = mpsc::channel();
+        cx.update_window(handle.into(), |_, window, cx| {
+            window.render_frame(cx);
+            view.update(cx, |view, cx| {
+                let session = view.session.as_mut().unwrap();
+                session.output = receiver;
+                session.terminal.advance_bytes(b"https://example.org/one\r\n\x1b]8;;https://example.org/two\x07Read docs\x1b]8;;\x07");
+                cx.notify();
+            });
+        }).unwrap();
+        for step in 0..6 {
+            cx.update_window(handle.into(), |_, window, cx| {
+                window.render_frame(cx);
+                let bounds = view.read(cx).bounds;
+                let cell = view.read(cx).cell_size;
+                let at =
+                    |col: f32, row: f32| bounds.origin + point(cell.width * col, cell.height * row);
+                let modifiers = Modifiers {
+                    platform: cfg!(target_os = "macos"),
+                    control: !cfg!(target_os = "macos"),
+                    ..Default::default()
+                };
+                if step == 1 {
+                    window.drag(at(0.5, 0.5), at(22.5, 0.5), cx);
+                    assert_eq!(
+                        view.read(cx)
+                            .selection
+                            .unwrap()
+                            .text(&view.read(cx).session.as_ref().unwrap().terminal),
+                        "https://example.org/one"
+                    );
+                    window.press(
+                        if cfg!(target_os = "macos") {
+                            "cmd-enter"
+                        } else {
+                            "ctrl-shift-enter"
+                        },
+                        cx,
+                    );
+                    return;
+                }
+                if step == 5 {
+                    view.update(cx, |view, cx| {
+                        view.session
+                            .as_mut()
+                            .unwrap()
+                            .terminal
+                            .advance_bytes(b"\x1b[?1000h\x1b[?1006h");
+                        cx.notify();
+                    });
+                    window.render_frame(cx);
+                }
+                let position = at(3.5, if step == 2 || step == 5 { 1.5 } else { 0.5 });
+                let modifiers = if step == 0 {
+                    Modifiers::default()
+                } else {
+                    modifiers
+                };
+                window.dispatch_event(
+                    MouseDownEvent {
+                        button: MouseButton::Left,
+                        position,
+                        modifiers,
+                        click_count: 1,
+                        ..Default::default()
+                    }
+                    .to_platform_input(),
+                    cx,
+                );
+                let end = if step == 3 { at(7.5, 0.5) } else { position };
+                if step == 3 {
+                    window.dispatch_event(
+                        MouseMoveEvent {
+                            position: end,
+                            pressed_button: Some(MouseButton::Left),
+                            modifiers,
+                        }
+                        .to_platform_input(),
+                        cx,
+                    );
+                }
+                window.dispatch_event(
+                    MouseUpEvent {
+                        button: MouseButton::Left,
+                        position: end,
+                        modifiers,
+                        click_count: 1,
+                    }
+                    .to_platform_input(),
+                    cx,
+                );
+                window.render_frame(cx);
+            })
+            .unwrap();
+            let expected = match step {
+                0 => None,
+                2 | 3 => Some("https://example.org/two".into()),
+                _ => Some("https://example.org/one".into()),
+            };
+            assert_eq!(cx.opened_url(), expected, "step {step}");
+            assert_eq!(
+                bytes.try_recv().is_ok(),
+                step == 5,
+                "only mouse-reporting apps receive input"
+            );
+        }
+        cx.update(|cx| view.update(cx, |view, _| view.close()));
     }
 
     #[gpui_kit::test]
@@ -4170,7 +4412,7 @@ mod tests {
         let root = root.canonicalize().unwrap();
         let filename = "notes file.txt";
         std::fs::write(root.join(filename), "selected file contents").unwrap();
-        for remote in [false, true] {
+        for (remote, click) in [(false, false), (false, true), (true, false), (true, true)] {
             if remote && server.is_none() {
                 continue;
             }
@@ -4224,6 +4466,40 @@ mod tests {
                     cx.notify();
                 });
                 window.render_frame(cx);
+                if click {
+                    let position = view.read(cx).bounds.origin
+                        + point(
+                            view.read(cx).cell_size.width * 4.5,
+                            view.read(cx).cell_size.height * 0.5,
+                        );
+                    let modifiers = Modifiers {
+                        platform: cfg!(target_os = "macos"),
+                        control: !cfg!(target_os = "macos"),
+                        ..Default::default()
+                    };
+                    window.dispatch_event(
+                        MouseDownEvent {
+                            button: MouseButton::Left,
+                            position,
+                            modifiers,
+                            click_count: 1,
+                            ..Default::default()
+                        }
+                        .to_platform_input(),
+                        cx,
+                    );
+                    window.dispatch_event(
+                        MouseUpEvent {
+                            button: MouseButton::Left,
+                            position,
+                            modifiers,
+                            click_count: 1,
+                        }
+                        .to_platform_input(),
+                        cx,
+                    );
+                    return;
+                }
                 window.press(
                     if cfg!(target_os = "macos") {
                         "cmd-a"
@@ -4241,6 +4517,9 @@ mod tests {
             .unwrap();
             cx.run_until_parked();
             cx.update_window(handle.into(), |_, window, cx| {
+                if click {
+                    return;
+                }
                 window.render_frame(cx);
                 let ix = if remote { 4usize } else { 2usize };
                 assert_eq!(window.within("popup-menu").find(ix).label(), Some("Edit"));

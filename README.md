@@ -27,6 +27,8 @@ A native terminal for local development and remote work, built in Rust.
 - Hold **Shift** to select text in terminal apps that capture the mouse.
 - Copy selected text, copy the visible screen, select all scrollback, paste from the clipboard, and paste with the middle mouse button.
 - Selection handles Unicode and wrapped lines across scrollback.
+- **⌘-click** on macOS or **Ctrl-click** elsewhere opens HTTP(S) links in your browser and file paths in the built-in editor, including paths in SSH output. Hold the modifier to underline the target and show a hand cursor; ordinary clicks and dragging still select text. Explicit OSC 8 hyperlinks, wrapped links, quoted paths with spaces, and `path:line:column` diagnostics are supported (diagnostics open the file).
+- Open selected links or paths with **⌘Enter / Ctrl+Shift+Enter**, or **Open selected link or file** in the command palette. Selected URLs also have an **Open link** context-menu action.
 - Case-insensitive literal search across the full terminal history, including wrapped lines, with highlighted results and a match counter.
 - Navigate results with **Enter / Shift+Enter** or **⌘G / ⌘⇧G**; close search with **Escape**.
 - Clear both the visible terminal and its scrollback.
@@ -188,6 +190,7 @@ CI release ZIPs use ad-hoc signing; Apple notarization is not configured.
 | Find in terminal | ⌘F |
 | Next / previous search result | ⌘G / ⌘⇧G |
 | Copy selection | ⌘C or ⌘⇧C |
+| Open selected link or file | ⌘Enter |
 | Copy visible screen | ⌘⌥C |
 | Paste | ⌘V |
 | Select all scrollback | ⌘A |
