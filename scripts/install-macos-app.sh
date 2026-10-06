@@ -1,10 +1,14 @@
 #!/bin/sh
 set -eu
 cd "$(dirname "$0")/.."
-cargo build --locked
-bundle="/Applications/TerminalFlow.app"
+profile="${CARGO_PROFILE:-dev}"
+cargo build --locked --profile "$profile"
+build_dir="$profile"
+if [ "$profile" = dev ]; then build_dir=debug; fi
+app_dir="${1:-/Applications}"
+bundle="$app_dir/TerminalFlow.app"
 mkdir -p "$bundle/Contents/MacOS"
-cp target/debug/local-terminal "$bundle/Contents/MacOS/local-terminal.new"
+cp "target/$build_dir/local-terminal" "$bundle/Contents/MacOS/local-terminal.new"
 mv "$bundle/Contents/MacOS/local-terminal.new" "$bundle/Contents/MacOS/local-terminal"
 mkdir -p "$bundle/Contents/Resources/font-licenses"
 cp assets/fonts/*LICENSE.txt assets/fonts/README.md "$bundle/Contents/Resources/font-licenses/"
@@ -29,7 +33,8 @@ cat > "$bundle/Contents/Info.plist" <<'PLIST'
 <key>NSPrincipalClass</key><string>NSApplication</string>
 </dict></plist>
 PLIST
-helper="/Applications/TerminalFlow Finder.app"
+codesign --force --sign - "$bundle"
+helper="$app_dir/TerminalFlow Finder.app"
 osacompile -o "$helper" scripts/finder-helper.applescript
 plutil -replace CFBundleIdentifier -string com.local-terminal.finder "$helper/Contents/Info.plist"
 plutil -replace NSAppleEventsUsageDescription -string 'Opens TerminalFlow at the current Finder folder.' "$helper/Contents/Info.plist"

@@ -147,6 +147,27 @@ On macOS, build and install the app into `/Applications`:
 ./scripts/install-macos-app.sh
 ```
 
+## GitHub releases
+
+Commit and push the release workflow and your changes first, then run (requires `curl` and `jq`):
+
+```sh
+./scripts/release.sh --dry-run
+./scripts/release.sh
+```
+
+The script reads the GitHub token from the HTTPS `origin` URL in `.git/config`,
+selects the next unused `vX.Y.Z` version (starting with `Cargo.toml`), and starts
+[GitHub Actions](https://docs.github.com/en/rest/actions/workflows#create-a-workflow-dispatch-event).
+The token needs access to the repository and permission to run Actions.
+The workflow must be on the repository's default branch before its first run.
+
+Once all native builds pass, the workflow publishes macOS ARM64 app ZIPs,
+a Linux AMD64 tarball, a Windows AMD64 ZIP, checksums, and generated release notes.
+Linux binaries are built on Ubuntu 22.04 and require the system's Fontconfig,
+Wayland, XKB/XCB libraries, and a Vulkan-capable graphics driver.
+macOS apps use ad-hoc signing; Apple notarization is not configured.
+
 ## Keyboard shortcuts
 
 | Action | macOS shortcut |

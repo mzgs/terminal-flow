@@ -1,0 +1,118 @@
+name: Release
+run-name: Release ${{ inputs.tag }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag (vX.Y.Z)
+        required: true
+        type: string
+      sha:
+        description: Commit to build and tag
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15
+            platform: mac-arm64
+            host: aarch64-apple-darwin
+          - os: ubuntu-22.04
+            platform: linux-amd64
+            host: x86_64-unknown-linux-gnu
+          - os: windows-2022
+            platform: windows-amd64
+            host: x86_64-pc-windows-msvc
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.sha }}
+          persist-credentials: false
+      - name: Validate release inputs
+        shell: bash
+        env:
+          TAG: ${{ inputs.tag }}
+          SHA: ${{ inputs.sha }}
+        run: |
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$SHA"
+      - name: Install Rust
+        shell: bash
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustc -vV | grep -Fx 'host: ${{ matrix.host }}'
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake pkg-config libfontconfig1-dev libfreetype6-dev libwayland-dev libxkbcommon-x11-dev libxcb1-dev libssl-dev libvulkan1
+      - name: Build and package macOS apps
+        if: runner.os == 'macOS'
+        env:
+          CARGO_PROFILE: release
+        run: |
+          ./scripts/install-macos-app.sh "$PWD/target/package"
+          ditto -c -k --sequesterRsrc --keepParent target/package/TerminalFlow.app target/TerminalFlow-mac-arm64.zip
+          ditto -c -k --sequesterRsrc --keepParent 'target/package/TerminalFlow Finder.app' target/TerminalFlow-Finder-mac-arm64.zip
+      - name: Build Linux and Windows
+        if: runner.os != 'macOS'
+        run: cargo build --release --locked
+      - name: Package Linux
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p target/package/TerminalFlow/font-licenses
+          cp target/release/local-terminal target/package/TerminalFlow/terminalflow
+          cp assets/fonts/*LICENSE.txt assets/fonts/README.md target/package/TerminalFlow/font-licenses/
+          tar -czf target/TerminalFlow-linux-amd64.tar.gz -C target/package TerminalFlow
+      - name: Package Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force target/package/TerminalFlow/font-licenses
+          Copy-Item target/release/local-terminal.exe target/package/TerminalFlow/TerminalFlow.exe
+          Copy-Item assets/fonts/*LICENSE.txt, assets/fonts/README.md target/package/TerminalFlow/font-licenses/
+          Compress-Archive -Path target/package/TerminalFlow -DestinationPath target/TerminalFlow-windows-amd64.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.platform }}
+          path: |
+            target/TerminalFlow*.zip
+            target/TerminalFlow*.tar.gz
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release
+          merge-multiple: true
+      - name: Create release with all platforms
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ inputs.tag }}
+          SHA: ${{ inputs.sha }}
+        run: |
+          cd release
+          sha256sum * > SHA256SUMS.txt
+          gh release create "$TAG" ./* --target "$SHA" --title "TerminalFlow $TAG" --generate-notes --draft
+          gh release edit "$TAG" --draft=false
