@@ -2,6 +2,9 @@
 set -eu
 cd "$(dirname "$0")/.."
 profile="${CARGO_PROFILE:-dev}"
+version=${TERMINALFLOW_VERSION:-$(git describe --tags --abbrev=0 --match 'v[0-9]*' 2>/dev/null || awk '/^version *=/{split($0,parts,"\"");print parts[2];exit}' Cargo.toml)}
+version=${version#v}
+export TERMINALFLOW_VERSION="$version"
 cargo build --locked --profile "$profile"
 build_dir="$profile"
 if [ "$profile" = dev ]; then build_dir=debug; fi
@@ -33,12 +36,13 @@ cat > "$bundle/Contents/Info.plist" <<'PLIST'
 <key>NSPrincipalClass</key><string>NSApplication</string>
 </dict></plist>
 PLIST
-codesign --force --sign - "$bundle"
+plutil -replace CFBundleVersion -string "$version" "$bundle/Contents/Info.plist"
+plutil -insert CFBundleShortVersionString -string "$version" "$bundle/Contents/Info.plist"
 helper="$app_dir/TerminalFlow Finder.app"
 osacompile -o "$helper" scripts/finder-helper.applescript
 plutil -replace CFBundleIdentifier -string com.local-terminal.finder "$helper/Contents/Info.plist"
 plutil -replace NSAppleEventsUsageDescription -string 'Opens TerminalFlow at the current Finder folder.' "$helper/Contents/Info.plist"
 cp assets/AppIcon.icns "$helper/Contents/Resources/applet.icns"
-codesign --force --sign - "$helper"
+./scripts/sign-macos-app.sh "$bundle" "$helper"
 /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$bundle"
 printf 'Installed %s\n' "$bundle" "$helper"

@@ -224,6 +224,7 @@ impl Workspace {
             view.flush(cx);
             async {}
         }));
+        cx.on_app_restart(|view, cx| view.flush(cx)).detach();
         view._save_task = Some(cx.spawn(async move |this, cx| {
             let mut previous = None;
             loop {

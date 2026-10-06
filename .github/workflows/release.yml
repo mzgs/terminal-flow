@@ -22,6 +22,8 @@ concurrency:
 
 jobs:
   build:
+    env:
+      TERMINALFLOW_VERSION: ${{ inputs.tag }}
     strategy:
       fail-fast: false
       matrix:

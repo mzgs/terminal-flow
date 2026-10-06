@@ -242,6 +242,8 @@ impl Global for ActiveEditor {}
 enum Discard {
     Close,
     Quit,
+    #[cfg(target_os = "macos")]
+    Restart,
 }
 struct FileEditor {
     target: Target,
@@ -401,6 +403,8 @@ impl FileEditor {
         match action {
             Discard::Close => close(window, cx),
             Discard::Quit => cx.quit(),
+            #[cfg(target_os = "macos")]
+            Discard::Restart => cx.restart(),
         }
     }
 }
@@ -623,12 +627,19 @@ pub(crate) fn open_picker(window: &mut Window, cx: &mut App) {
 }
 /// The dialog owns the editor; the weak global only guards application/window quit.
 pub(crate) fn prevent_quit(cx: &mut App) -> bool {
+    prevent_exit(Discard::Quit, cx)
+}
+#[cfg(target_os = "macos")]
+pub(crate) fn prevent_restart(cx: &mut App) -> bool {
+    prevent_exit(Discard::Restart, cx)
+}
+fn prevent_exit(action: Discard, cx: &mut App) -> bool {
     let active = cx
         .try_global::<ActiveEditor>()
         .and_then(|active| active.0.clone());
     active.is_some_and(|editor| {
         editor
-            .update(cx, |view, cx| !view.request_discard(Discard::Quit, cx))
+            .update(cx, |view, cx| !view.request_discard(action, cx))
             .unwrap_or(false)
     })
 }
@@ -860,6 +871,12 @@ mod tests {
             assert!(super::prevent_quit(cx), "Quit must guard dirty files");
             window.render_frame(cx);
             window.click("file-editor-keep", cx);
+            #[cfg(target_os = "macos")]
+            {
+                assert!(super::prevent_restart(cx), "Restart must guard dirty files");
+                window.render_frame(cx);
+                window.click("file-editor-keep", cx);
+            }
             window.press("escape", cx);
             assert!(window.find("file-editor-discard").visible());
             window.click("file-editor-discard", cx);

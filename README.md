@@ -104,6 +104,7 @@ Select text or a filename in terminal output, then use the context menu or comma
 
 ### macOS integration
 
+- **TerminalFlow → Check for Updates…** checks GitHub for a newer release, downloads and verifies it, replaces the installed Apple Silicon app, and offers to restart. The app must be in a writable Applications folder; unsaved editor changes are protected before restarting.
 - Install a native app bundle and a **TerminalFlow Finder** helper with the installation script below.
 - The Finder helper opens a new terminal at the front Finder window's folder, or the Desktop when no Finder window is open.
 - The **`terminalflow://` URL scheme** can activate the app or open a new local tab with an optional working directory, custom title, and startup command.
@@ -166,7 +167,11 @@ Once all native builds pass, the workflow publishes macOS ARM64 app ZIPs,
 a Linux AMD64 tarball, a Windows AMD64 ZIP, checksums, and generated release notes.
 Linux binaries are built on Ubuntu 22.04 and require the system's Fontconfig,
 Wayland, XKB/XCB libraries, and a Vulkan-capable graphics driver.
-macOS apps use ad-hoc signing; Apple notarization is not configured.
+Local macOS installs create and reuse a self-signed certificate in your login
+Keychain, with no Apple Developer account required. Automatic updates preserve
+that local identity, so macOS file permissions survive rebuilds and updates.
+macOS may ask once when switching from an ad-hoc install to this identity.
+CI release ZIPs use ad-hoc signing; Apple notarization is not configured.
 
 ## Keyboard shortcuts
 

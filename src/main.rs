@@ -13,6 +13,8 @@ mod sftp_browser;
 mod ssh;
 mod ssh_icons;
 mod storage;
+#[cfg(target_os = "macos")]
+mod updater;
 mod workspace;
 
 use gpui_kit::{
@@ -66,6 +68,7 @@ actions!(
         SelectAll,
         Paste,
         Restart,
+        CheckForUpdates,
         Quit,
         ClearTerminal,
         ZoomIn,
@@ -2722,6 +2725,8 @@ fn main() {
             cx.on_action(|_: &Quit, cx| {
                 if !editor::prevent_quit(cx) { cx.quit(); }
             });
+            #[cfg(target_os = "macos")]
+            updater::init(cx);
             cx.set_menus(vec![
                 Menu {
                     name: "TerminalFlow".into(),
@@ -2735,6 +2740,8 @@ fn main() {
                         MenuItem::action("Add SSH server…", AddSshServer),
                         MenuItem::action("SSH servers…", ManageSshServers),
                         MenuItem::action("Settings…", OpenSettings),
+                        #[cfg(target_os = "macos")]
+                        MenuItem::action("Check for Updates…", CheckForUpdates),
                         MenuItem::separator(),
                         MenuItem::action("Quit", Quit),
                     ],
