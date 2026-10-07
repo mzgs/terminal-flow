@@ -1104,6 +1104,8 @@ impl Render for Workspace {
                     .map(|profile| profile.icon.clone());
                 let (state, status_color) = if terminal.connecting {
                     ("Connecting", cx.theme().warning)
+                } else if terminal.reconnect_at.is_some() {
+                    ("Reconnecting", cx.theme().warning)
                 } else if terminal.running {
                     ("Ready", cx.theme().success)
                 } else {
@@ -2833,8 +2835,7 @@ mod tests {
         cx.run_until_parked();
         let first = workspace.read_with(cx, |view, _| view.tabs[0].panes[0].terminal.clone());
         cx.update_window(handle.into(), |_, window, cx| {
-            let (_, output) = capture(&first, cx);
-            first.update(cx, |view, _| {
+            first.update(cx, |view, cx| {
                 let profile = SshProfile {
                     name: "Reconnect test".into(),
                     host: "localhost".into(),
@@ -2848,15 +2849,39 @@ mod tests {
                 view.ssh_profile = Some(profile);
                 // Missing credentials fail before launching SSH; this test needs no server.
                 view.store = Some(Store::at(std::env::temp_dir()));
+                view.spawn(portable_pty::CommandBuilder::new("/bin/cat"), "Reconnect test".into(), cx);
             });
+            let (_, output) = capture(&first, cx);
             window.render_frame(cx);
             assert_eq!(
                 window.find(("tab-status", first.entity_id())).label(),
-                Some("Ready")
+                Some("Connecting")
             );
+            for bytes in [
+                &b"Connection timed out during banner exchange\r\nConnection to 87.106.86.41 port 22 timed out\r\n"[..],
+                &b"\x1b]7;file:///srv/"[..],
+            ] {
+                output.send(Output::Bytes(bytes.to_vec())).unwrap();
+                first.update(cx, |view, cx| view.read_output(cx));
+                window.render_frame(cx);
+                let dot = window.find(("tab-status", first.entity_id()));
+                assert_eq!(dot.label(), Some("Connecting"));
+                let bounds = dot.bounds().scale(window.scale_factor());
+                assert!(window.painted_quads().iter().any(|quad| {
+                    quad.bounds == bounds && quad.background == cx.theme().warning.into()
+                }));
+            }
             output
-                .send(Output::Bytes(b"\x1b]7;file:///srv/work\x07".to_vec()))
+                .send(Output::Bytes(b"work\x07".to_vec()))
                 .unwrap();
+            first.update(cx, |view, cx| view.read_output(cx));
+            window.render_frame(cx);
+            let dot = window.find(("tab-status", first.entity_id()));
+            assert_eq!(dot.label(), Some("Ready"));
+            let bounds = dot.bounds().scale(window.scale_factor());
+            assert!(window.painted_quads().iter().any(|quad| {
+                quad.bounds == bounds && quad.background == cx.theme().success.into()
+            }));
             output
                 .send(Output::Error("Connection lost".into()))
                 .unwrap();
@@ -2868,7 +2893,7 @@ mod tests {
             window.render_frame(cx);
             assert_eq!(
                 window.find(("tab-status", first.entity_id())).label(),
-                Some("Closed")
+                Some("Reconnecting")
             );
             assert!(window.try_find("restart").is_none());
             workspace.update(cx, |view, cx| view.reconnect_active(false, window, cx));
@@ -3033,6 +3058,7 @@ mod tests {
                     std::thread::sleep(Duration::from_millis(1));
                     terminal.update(cx, |view, cx| view.read_output(cx));
                 }
+                assert!(!terminal.read(cx).connecting);
                 assert_eq!(terminal.read(cx).reconnect_at.is_some(), code != 0);
                 assert!(
                     terminal
@@ -3041,6 +3067,13 @@ mod tests {
                         .contains(&format!("Shell exited ({code})"))
                 );
                 window.render_frame(cx);
+                let dot = window.find(("tab-status", terminal.entity_id()));
+                assert_eq!(dot.label(), Some(if code == 0 { "Closed" } else { "Reconnecting" }));
+                let bounds = dot.bounds().scale(window.scale_factor());
+                let color = if code == 0 { cx.theme().danger } else { cx.theme().warning };
+                assert!(window.painted_quads().iter().any(|quad| {
+                    quad.bounds == bounds && quad.background == color.into()
+                }));
                 assert!(window.try_find("restart").is_none());
                 let output = window.find("terminal").value().unwrap().to_string();
                 assert!(output.contains("SSH_HISTORY"));

@@ -501,6 +501,7 @@ impl TerminalView {
                 self.schedule_reconnect();
             }
         }
+        self.connecting = remote && self.running;
         self.refresh_search(false, cx);
         cx.notify();
     }
@@ -552,6 +553,10 @@ impl TerminalView {
                     let alt_screen = session.terminal.is_alt_screen_active();
                     let cursor = session.terminal.cursor_pos();
                     session.terminal.advance_bytes(bytes);
+                    // The remote command emits OSC 7 only after SSH has connected.
+                    if self.connecting && session.terminal.get_current_dir().is_some() {
+                        self.connecting = false;
+                    }
                     let moved = session.terminal.cursor_pos();
                     if (cursor.x, cursor.y, cursor.shape) != (moved.x, moved.y, moved.shape) {
                         self.cursor_epoch = Instant::now();
@@ -611,6 +616,9 @@ impl TerminalView {
                 }
                 Err(TryRecvError::Empty) => break,
             }
+        }
+        if !self.running {
+            self.connecting = false;
         }
         if reconnect {
             self.schedule_reconnect();
