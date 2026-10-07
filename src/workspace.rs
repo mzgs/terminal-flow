@@ -1151,6 +1151,13 @@ impl Render for Workspace {
                             .opacity(if dragging { 0.25 } else { 1. })
                             .child(
                                 terminal_tab(("tab-surface", id), id == self.active, cx)
+                                    .on_mouse_down(
+                                        MouseButton::Middle,
+                                        cx.listener(move |view, _, window, cx| {
+                                            cx.stop_propagation();
+                                            view.close(id, window, cx);
+                                        }),
+                                    )
                                     .on_drag(drag, move |drag, offset, window, cx| {
                                         drag.grab_offset.set(offset.x);
                                         let mut preview = drag.clone();
@@ -1613,7 +1620,7 @@ mod tests {
         WindowHandle,
         component::{ActiveTheme, Root},
         point, px, size,
-        test::TestWindowExt,
+        test::{ClickOptions, TestWindowExt},
     };
     use std::{
         io::Write,
@@ -3272,6 +3279,51 @@ mod tests {
         .unwrap();
         cx.update(|cx| assert!(cx.windows().is_empty()));
     }
+    #[gpui_kit::test]
+    fn middle_click_closes_the_target_tab_and_keeps_terminal_focus(cx: &mut TestAppContext) {
+        let (handle, workspace) = open(cx);
+        cx.update(|cx| cx.set_reduce_motion(true));
+        cx.update_window(handle.into(), |_, window, cx| {
+            window.render_frame(cx);
+            let first = workspace.read(cx).tabs[0].active_terminal().clone();
+            window.click("new-tab", cx);
+            let second = workspace.read(cx).tabs[1].active_terminal().clone();
+            window.click("new-tab", cx);
+            let third = workspace.read(cx).tabs[2].active_terminal().clone();
+
+            window.click_with_options(
+                ("tab", first.entity_id()),
+                ClickOptions::new().with_button(MouseButton::Middle),
+                cx,
+            );
+            assert_eq!(workspace.read(cx).tabs.len(), 2);
+            assert!(first.read(cx).session.is_none());
+            assert_eq!(workspace.read(cx).active, third.entity_id());
+            assert!(third.read(cx).focus.is_focused(window));
+            assert!(!cx.has_active_drag());
+
+            window.click_with_options(
+                ("close-tab", third.entity_id()),
+                ClickOptions::new().with_button(MouseButton::Middle),
+                cx,
+            );
+            assert_eq!(workspace.read(cx).tabs.len(), 1);
+            assert!(third.read(cx).session.is_none());
+            assert_eq!(workspace.read(cx).active, second.entity_id());
+            assert!(second.read(cx).focus.is_focused(window));
+
+            window.click_with_options(
+                ("tab", second.entity_id()),
+                ClickOptions::new().with_button(MouseButton::Middle),
+                cx,
+            );
+            assert!(workspace.read(cx).tabs.is_empty());
+            assert!(second.read(cx).session.is_none());
+        })
+        .unwrap();
+        cx.update(|cx| assert!(cx.windows().is_empty()));
+    }
+
     fn pointer_move(window: &mut Window, position: Point<Pixels>, cx: &mut App) {
         window.dispatch_event(
             MouseMoveEvent {
