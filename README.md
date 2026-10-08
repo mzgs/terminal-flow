@@ -1,10 +1,30 @@
 # TerminalFlow
 
-A native terminal for local development and remote work, built in Rust.
+A native terminal workspace for developers working across local projects and remote servers, built in Rust.
+
+TerminalFlow brings shell sessions, SSH connections, SFTP transfers, and a built-in file editor into one desktop app. Developers can run commands, inspect output, move files, and edit local or remote code without switching between separate terminal, file-transfer, and editor windows.
 
 ![TerminalFlow showcase: split panes, SSH and SFTP, and a built-in editor](assets/terminalflow-showcase.png)
 
 **Split panes · SSH & SFTP · Built-in editor**
+
+## Who it is for
+
+- Developers who build and test locally while deploying or debugging over SSH.
+- Engineers and server administrators who need terminal access, remote file management, and quick edits in the same workspace.
+
+## Project status
+
+TerminalFlow is under active development. The repository includes the terminal, SSH/SFTP, editor, and workspace features documented below, with release packaging for macOS Apple Silicon, Linux AMD64, and Windows AMD64.
+
+## Planned Claude assistant
+
+We plan to integrate the Claude API into TerminalFlow so developers can get help directly in their terminal workspace:
+
+- Turn natural-language requests into shell command suggestions.
+- Explain selected terminal errors and suggest troubleshooting steps.
+
+The goal is to reduce the time spent looking up commands and interpreting failures during local development and remote server work. This assistant is planned and has not been implemented yet.
 
 ## Features
 
@@ -205,5 +225,20 @@ CI release ZIPs use ad-hoc signing; Apple notarization is not configured.
 | Quit | ⌘Q |
 
 Additional Ctrl bindings are available: **Ctrl+P** for the palette, **Ctrl+T** for a new tab, **Ctrl+Shift+D / Ctrl+Alt+D** for splits, **Ctrl+Alt+←/→** for panes, **Ctrl+W** to close a tab, **Ctrl+Shift+W** to close a pane, **Ctrl+Shift+F** for search, **Ctrl+Shift+C/V/A** for copy/paste/select all, **Ctrl+Shift+K** to clear, **Ctrl+Shift+B** for status, **Ctrl+Shift+S** for servers, **Ctrl+,** for settings, and **Ctrl+Shift+=/−/0** for zoom. **Ctrl+Insert / Shift+Insert** also copy and paste. On non-macOS platforms, **Ctrl+F**, **Ctrl+O**, and **Ctrl+S** are also bound to search, open, and editor save.
+
+## Claude for Startups application
+
+For the [Claude for Startups program](https://claude.com/programs/startups), this short description summarizes the current product and intended Claude usage:
+
+> TerminalFlow is a native terminal workspace built in Rust for developers working across local projects and remote servers. It combines shell sessions, SSH, SFTP transfers, and a built-in file editor. We plan to integrate the Claude API to suggest shell commands from natural-language requests and explain terminal errors, helping developers troubleshoot within the same workspace. The Claude assistant is not yet implemented.
+
+Before [applying through Claude Console](https://platform.claude.com/offers/startups-application), prepare:
+
+- A Claude Console account.
+- A company website and a company email address matching its domain.
+- Your founding or funding date: the program currently accepts startups founded within the last five years or funded within the last two years, including bootstrapped startups.
+- A short description of the product and an accurate account of how you use or intend to use Claude.
+
+Check the linked program page for current requirements. Company details and eligibility must be supplied by the founder.
 
 Built with [GPUI Kit](https://github.com/longbridge/gpui-kit), [WezTerm's `wezterm-term`](https://github.com/wezterm/wezterm/tree/main/term) emulator, and its `portable-pty` library.
