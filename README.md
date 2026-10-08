@@ -150,6 +150,33 @@ Press **⌘P** to find workspace actions without leaving the keyboard.
 
 ![TerminalFlow command palette showing split-pane actions over a development workspace](assets/screenshots/command-palette.jpg)
 
+## Install with Homebrew
+
+On an **Apple Silicon Mac running macOS 11 or newer**:
+
+```sh
+brew tap mzgs/terminal-flow https://github.com/mzgs/terminal-flow
+brew install --cask mzgs/terminal-flow/terminalflow
+```
+
+TerminalFlow is installed in `/Applications`. Quit the app before upgrading:
+
+```sh
+brew update
+brew upgrade --cask mzgs/terminal-flow/terminalflow
+```
+
+For Homebrew installations, use these commands for updates so Homebrew's
+installation record stays in sync. The Finder helper remains a separate download
+from [GitHub releases](https://github.com/mzgs/terminal-flow/releases/latest).
+Release builds are ad-hoc signed and not notarized; if macOS blocks the first
+launch, allow TerminalFlow in **System Settings → Privacy & Security**.
+
+This repository also serves as the [Homebrew tap](https://docs.brew.sh/How-to-Create-and-Maintain-a-Tap).
+After publishing a release, the workflow commits the new cask version and SHA-256
+checksum to the default branch using its `contents: write` permission. Branch
+rules must allow the release workflow to push that cask update.
+
 ## Run locally
 
 Requires Rust **1.95 or newer** and Cargo. From the repository root:
@@ -187,6 +214,7 @@ The workflow must be on the repository's default branch before its first run.
 
 Once all native builds pass, the workflow publishes macOS ARM64 app ZIPs,
 a Linux AMD64 tarball, a Windows AMD64 ZIP, checksums, and generated release notes.
+It then updates `Casks/terminalflow.rb` so Homebrew users can upgrade to the release.
 Linux binaries are built on Ubuntu 22.04 and require the system's Fontconfig,
 Wayland, XKB/XCB libraries, and a Vulkan-capable graphics driver.
 Local macOS installs create and reuse a self-signed certificate in your login
