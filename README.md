@@ -156,8 +156,7 @@ On an **Apple Silicon Mac running macOS 11 or newer**:
 
 ```sh
 brew tap mzgs/terminal-flow https://github.com/mzgs/terminal-flow
-brew trust --cask mzgs/terminal-flow/terminalflow
-brew install terminalflow
+brew install --cask mzgs/terminal-flow/terminalflow
 ```
 
 To update:
