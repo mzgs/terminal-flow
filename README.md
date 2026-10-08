@@ -156,14 +156,13 @@ On an **Apple Silicon Mac running macOS 11 or newer**:
 
 ```sh
 brew tap mzgs/terminal-flow https://github.com/mzgs/terminal-flow
-brew install --cask mzgs/terminal-flow/terminalflow
+brew install terminalflow
 ```
 
-TerminalFlow is installed in `/Applications`. Quit the app before upgrading:
+To update:
 
 ```sh
-brew update
-brew upgrade --cask mzgs/terminal-flow/terminalflow
+brew upgrade terminalflow
 ```
 
 For Homebrew installations, use these commands for updates so Homebrew's
