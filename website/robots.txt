@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://terminalflowapp.com/sitemap.xml

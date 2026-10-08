@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0b0e0d">
+  <title>TerminalFlow — Stay in your flow.</title>
+  <meta name="description" content="A native terminal workspace built in Rust. Split panes, SSH, SFTP, and a built-in editor for local development and remote servers.">
+  <link rel="canonical" href="https://terminalflowapp.com/">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="TerminalFlow">
+  <meta property="og:title" content="TerminalFlow — Stay in your flow.">
+  <meta property="og:description" content="Your shells, servers, and files. One native workspace. Built in Rust for local development and remote work.">
+  <meta property="og:url" content="https://terminalflowapp.com/">
+  <meta property="og:image" content="https://terminalflowapp.com/assets/workspace.jpg">
+  <meta property="og:image:alt" content="TerminalFlow with two terminal panes in a development workspace">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header wrap">
+    <a class="brand" href="#" aria-label="TerminalFlow home"><span class="brand-mark" aria-hidden="true">&gt;_</span>TerminalFlow</a>
+    <nav aria-label="Main navigation">
+      <a href="#workspace">Workspace</a>
+      <a href="#roadmap">What's next</a>
+      <a class="nav-download" href="#download">Get TerminalFlow <span aria-hidden="true">↗</span></a>
+    </nav>
+  </header>
+  <main id="main">
+    <section class="hero wrap" aria-labelledby="hero-title">
+      <div class="eyebrow"><span class="status-dot" aria-hidden="true"></span> A NATIVE TERMINAL. BUILT IN RUST.</div>
+      <div class="hero-copy">
+        <h1 id="hero-title">Stay in<br>your <span>flow.</span></h1>
+        <div class="hero-description">
+          <p class="lead">Your shells, servers, and files.<br>One workspace that keeps up.</p>
+          <p class="muted">From your first local command to the next remote deploy. Split panes, SSH, SFTP, and a built-in editor, together in one native desktop app.</p>
+          <div class="hero-actions"><a class="button" href="#download">Download TerminalFlow <span aria-hidden="true">↗</span></a><a class="text-link" href="https://github.com/mzgs/terminal-flow">View on GitHub <span aria-hidden="true">↗</span></a></div>
+          <p class="platform-note">macOS Apple Silicon · Linux AMD64 · Windows AMD64</p>
+        </div>
+      </div>
+      <figure class="hero-figure">
+        <div class="image-label"><span><span class="status-dot" aria-hidden="true"></span> YOUR WORKSPACE, CONNECTED.</span><span class="image-label-right">LOCAL / REMOTE</span></div>
+        <img src="assets/workspace.jpg" width="2000" height="1200" alt="TerminalFlow running two side-by-side shells with project files and Cargo commands" fetchpriority="high">
+        <figcaption><span>A real TerminalFlow workspace.</span><span>Tokyo Night theme / JetBrains Mono</span></figcaption>
+      </figure>
+    </section>
+
+    <div class="capability-strip" aria-label="Core capabilities"><div class="wrap"><span>Native rendering</span><span aria-hidden="true">/</span><span>Real shell sessions</span><span aria-hidden="true">/</span><span>SSH &amp; SFTP</span><span aria-hidden="true">/</span><span>Built-in editing</span></div></div>
+
+    <section class="workspace-section wrap section" id="workspace" aria-labelledby="workspace-title">
+      <div class="section-heading"><p class="eyebrow">01 / THE WORKSPACE</p><h2 id="workspace-title">Less switching.<br>More shipping.</h2><p class="section-intro">Keep the tools you reach for every day<br class="desktop-break"> right where the work happens.</p></div>
+      <div class="feature-rows">
+        <article class="feature-row"><span class="feature-number">01</span><div><h3>Room for your entire workflow.</h3><p>Run your dev server, tests, and shell side by side. Split a tab into up to four independent panes, keep projects in separate tabs, and move between them with the keyboard.</p><div class="tags"><span>Split panes</span><span>Multiple tabs</span><span>Session restoration</span></div></div><div class="feature-detail"><span class="mini-label">MAKE SPACE</span><div class="pane-diagram" aria-hidden="true"><span>&gt;_ dev</span><span>&gt;_ tests</span><span>&gt;_ shell</span></div></div></article>
+        <article class="feature-row"><span class="feature-number">02</span><div><h3>Local to remote. Same workspace.</h3><p>Connect to saved SSH servers and browse their files with SFTP. Upload, download, and manage remote folders without reaching for a separate file-transfer app.</p><div class="tags"><span>SSH profiles</span><span>SFTP browser</span><span>Drag &amp; drop transfers</span></div></div><div class="feature-detail connection-diagram" aria-hidden="true"><span class="mini-label">STAY CONNECTED</span><span class="connection-node">&gt;_ localhost</span><span class="connection-line">↓ SSH / SFTP</span><span class="connection-node"><span class="status-dot"></span> remote server</span></div></article>
+        <article class="feature-row"><span class="feature-number">03</span><div><h3>The quick edit, without the detour.</h3><p>Open local and remote files in the built-in editor. Syntax highlighting, line-ending preservation, and unsaved-change prompts help you make the change and get back to your terminal.</p><div class="tags"><span>Local &amp; remote files</span><span>Syntax highlighting</span><span>Atomic saves</span></div></div><div class="feature-detail editor-detail" aria-hidden="true"><span class="mini-label">EDIT IN PLACE</span><div class="code-sample"><span class="code-muted">// back to building</span><br><span class="code-green">fn</span> main() {<br>&nbsp;&nbsp;println!(<span class="code-green">"in the flow"</span>);<br>}</div></div></article>
+      </div>
+    </section>
+
+    <section class="palette-section section" aria-labelledby="palette-title"><div class="wrap palette-layout">
+      <div class="palette-copy"><p class="eyebrow">02 / AT YOUR FINGERTIPS</p><h2 id="palette-title">Find it.<br>Run it.<br>Keep moving.</h2><p class="muted">One command palette for workspace actions, saved commands, and SSH servers. Fuzzy search gets you there without taking your hands off the keyboard.</p><div class="shortcut"><kbd>⌘</kbd><kbd>P</kbd><span>on macOS <span aria-hidden="true">/</span> <kbd>Ctrl</kbd> <kbd>P</kbd> elsewhere</span></div><p class="palette-footnote">Make it yours with 12 color schemes, 10 font choices, and live appearance previews.</p></div>
+      <figure class="palette-figure"><img src="assets/command-palette.jpg" width="2000" height="1200" alt="TerminalFlow command palette showing searchable split-pane and workspace actions" loading="lazy"><figcaption>The command palette in a real development session.</figcaption></figure>
+    </div></section>
+
+    <section class="roadmap-section wrap section" id="roadmap" aria-labelledby="roadmap-title">
+      <div><p class="eyebrow">03 / WHAT'S NEXT <span class="planned-label">PLANNED</span></p><h2 id="roadmap-title">A little clarity.<br>Right in your terminal.</h2><p class="section-intro">We're planning a built-in assistant powered by the Claude API, to help turn a question or an error into a clearer next step.</p><a class="text-link" href="https://github.com/mzgs/terminal-flow/issues">Share what you'd like to see <span aria-hidden="true">↗</span></a></div>
+      <div class="roadmap-details"><article><span class="roadmap-symbol" aria-hidden="true">&gt;_</span><h3>Your words. A command suggestion.</h3><p>Describe what you want to do in plain language and get a shell command suggestion to review.</p></article><article><span class="roadmap-symbol" aria-hidden="true">?</span><h3>Make sense of the error.</h3><p>Get explanations of selected terminal errors and suggested troubleshooting steps within your workspace.</p></article><p class="roadmap-note"><span class="status-dot" aria-hidden="true"></span> On the roadmap. The Claude assistant is not available in the current release.</p></div>
+    </section>
+
+    <section class="download-section section" id="download" aria-labelledby="download-title"><div class="wrap">
+      <div class="download-heading"><div><p class="eyebrow">04 / GET STARTED</p><h2 id="download-title">Your next workspace<br>starts here.</h2></div><p class="muted">Choose your platform.<br>Get back to building.</p></div>
+      <div class="downloads">
+        <article class="download-card"><span class="os-mark" aria-hidden="true">⌘</span><h3>macOS</h3><p>Apple Silicon · ARM64</p><a class="button button-secondary" href="https://github.com/mzgs/terminal-flow/releases/latest/download/TerminalFlow-mac-arm64.zip">Download .zip <span aria-hidden="true">↓</span><span class="sr-only"> for macOS Apple Silicon</span></a></article>
+        <article class="download-card"><span class="os-mark linux-mark" aria-hidden="true">&gt;_</span><h3>Linux</h3><p>64-bit · AMD64</p><a class="button button-secondary" href="https://github.com/mzgs/terminal-flow/releases/latest/download/TerminalFlow-linux-amd64.tar.gz">Download .tar.gz <span aria-hidden="true">↓</span><span class="sr-only"> for Linux AMD64</span></a></article>
+        <article class="download-card"><span class="os-mark" aria-hidden="true">⊞</span><h3>Windows</h3><p>64-bit · AMD64</p><a class="button button-secondary" href="https://github.com/mzgs/terminal-flow/releases/latest/download/TerminalFlow-windows-amd64.zip">Download .zip <span aria-hidden="true">↓</span><span class="sr-only"> for Windows AMD64</span></a></article>
+      </div>
+      <div class="download-meta"><p>In active development. Downloads come directly from GitHub Releases.</p><a class="text-link" href="https://github.com/mzgs/terminal-flow/releases/latest">Release notes &amp; checksums <span aria-hidden="true">↗</span></a></div>
+      <p class="source-note">Prefer to build it yourself? <a href="https://github.com/mzgs/terminal-flow#run-locally">Follow the source installation guide.</a></p>
+    </div></section>
+
+    <section class="faq-section wrap section" aria-labelledby="faq-title"><div><p class="eyebrow">A FEW DETAILS</p><h2 id="faq-title">Good to know.</h2></div><div class="faq-list">
+      <details><summary>What is TerminalFlow?</summary><p>TerminalFlow is a native desktop terminal written in Rust, built with GPUI Kit and WezTerm's terminal emulator. It combines local shells, split panes, SSH connections, SFTP transfers, and a file editor in one workspace.</p></details>
+      <details><summary>How do I install it?</summary><p>Download the archive for your operating system and extract it. On macOS, move TerminalFlow.app to Applications. On Windows, launch TerminalFlow.exe. On Linux, run the terminalflow binary; check the <a href="https://github.com/mzgs/terminal-flow#github-releases">release requirements</a> for system libraries and graphics support. The macOS release is ad-hoc signed and is not Apple-notarized.</p></details>
+      <details><summary>Can I use it with my own shell and servers?</summary><p>Yes. TerminalFlow uses your configured shell and supports SSH profiles with password or key authentication. Each pane has its own shell session, and the SFTP browser works alongside your remote terminal.</p></details>
+      <details><summary>Is the Claude assistant available?</summary><p>The Claude assistant is planned and has not been implemented yet. The intended features are shell command suggestions from natural-language requests and explanations of selected terminal errors. Today's release includes the terminal, SSH/SFTP, and editor features described on this page.</p></details>
+      <details><summary>Where can I report a bug or request a feature?</summary><p>Open an issue on <a href="https://github.com/mzgs/terminal-flow/issues">GitHub</a>. Include your operating system, the app version, and the steps needed to reproduce the problem.</p></details>
+    </div></section>
+  </main>
+  <footer class="site-footer wrap"><div><a class="brand" href="#"><span class="brand-mark" aria-hidden="true">&gt;_</span>TerminalFlow</a><p>Built for the work between local and remote.</p></div><nav aria-label="Footer navigation"><a href="https://github.com/mzgs/terminal-flow">GitHub <span aria-hidden="true">↗</span></a><a href="https://github.com/mzgs/terminal-flow#readme">Documentation <span aria-hidden="true">↗</span></a><a href="https://github.com/mzgs/terminal-flow/issues">Get in touch <span aria-hidden="true">↗</span></a></nav><p class="footer-domain">terminalflowapp.com</p></footer>
+</body>
+</html>
