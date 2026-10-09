@@ -196,6 +196,41 @@ On macOS, build and install the app into `/Applications`:
 ./scripts/install-macos-app.sh
 ```
 
+## Generate a blank GPUI Kit app
+
+Requires [rustup](https://rustup.rs). Run the generator from your app folder:
+
+```sh
+sh /path/to/terminal-flow/rust-gui-base-app.sh
+./run.sh
+```
+
+It uses the current folder name as the app name, updates Rust to the latest stable release, and creates a blank native window using the same pinned GPUI Kit revision as TerminalFlow, with `features = ["gpui-fast"]`. Folder names must start with a lowercase letter and contain only lowercase letters, digits, hyphens, or underscores. The generated `rust-toolchain.toml` and `run.sh` select stable Rust. Each run overwrites `Cargo.toml`, `src/main.rs`, `src/settings.rs`, `src/settings_view.rs`, `run.sh`, `build.sh`, `.gitignore`, and `rust-toolchain.toml` in the current folder. Other files are preserved. Generation needs internet access to update Rust; the first launch downloads and builds dependencies.
+
+Check the generator with `python3 scripts/test_rust_gui_base_app.py` from the repository root. The check includes compiling the generated app and running its settings UI integration test; dependencies must already be cached for the offline Cargo checks.
+
+Generated apps follow the system light or dark appearance at startup and when it changes.
+
+The app menu includes **Settings…** (`Cmd+,` on macOS, `Ctrl+,` elsewhere) and **Quit** (`Cmd+Q` on macOS, `Ctrl+Q` elsewhere). Settings opens a dialog for the three example fields, with Save and Cancel. Escape discards the draft; Enter saves. Invalid numbers and save failures show an inline error and keep the draft open. Saved global settings change only after the file is written successfully.
+
+The dialog also has **Import…** and **Export…** buttons using native file pickers. Import validates a JSON file and fills the draft; choose Save to apply it or Cancel to discard it. Export copies the currently saved settings, excluding unsaved edits. Picker cancellation leaves settings unchanged, and transfer failures appear inline. Settings JSON is limited to 1 MiB for both reads and writes.
+
+The generated `src/settings.rs` provides JSON persistence with three example fields: `display_name`, `notifications_enabled`, and `recent_items_limit`. Replace them with your own settings and update `src/settings_view.rs`. On first launch, the app creates defaults at the platform's local app data directory under `<app-name>/settings.json`: `~/Library/Application Support/<app-name>/settings.json` on macOS, `%LOCALAPPDATA%\<app-name>\settings.json` on Windows, and `$XDG_DATA_HOME/<app-name>/settings.json` (normally `~/.local/share`) on Linux. Missing fields use defaults. Invalid JSON, field types, or inaccessible app data show an error dialog with recovery instructions. The app opens with in-memory defaults and settings editing is disabled until you fix the file or permissions and restart. Existing files remain untouched. Saves write and sync a temporary file before replacing the original.
+
+Settings are loaded once at startup and stored as a GPUI global. Read them with `cx.global::<Settings>()`. To change and persist them from an app callback:
+
+```rust
+let mut settings = cx.global::<Settings>().clone();
+settings.notifications_enabled = false;
+settings.save(&Settings::path()?)?;
+cx.set_global(settings);
+cx.refresh_windows();
+```
+
+This example belongs in a method returning `std::io::Result<()>`; handle its error in the calling callback and only allow saving after startup settings loaded successfully. Run `cargo test` in the generated app to check settings persistence and the dialog's save, cancel, validation, and error behavior. Example fields do not change the blank window's behavior.
+
+On macOS, run `./build.sh` in a generated app to build an optimized, locally signed app bundle at `target/release/<folder-name>.app`, using stable Rust for your Mac's architecture. Open it from Finder or with `open target/release/<folder-name>.app`. The bundle is ad-hoc signed for local use; distribution signing and notarization are not included.
+
 ## GitHub releases
 
 Commit and push the release workflow and your changes first, then run (requires `curl` and `jq`):
