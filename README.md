@@ -205,15 +205,19 @@ sh /path/to/terminal-flow/rust-gui-base-app.sh
 ./run.sh
 ```
 
-It uses the current folder name as the app name, updates Rust to the latest stable release, and creates a blank native window using the same pinned GPUI Kit revision as TerminalFlow, with `features = ["gpui-fast"]`. Folder names must start with a lowercase letter and contain only lowercase letters, digits, hyphens, or underscores. The generated `rust-toolchain.toml` and `run.sh` select stable Rust. Each run overwrites `Cargo.toml`, `src/main.rs`, `src/settings.rs`, `src/settings_view.rs`, `run.sh`, `build.sh`, `.gitignore`, and `rust-toolchain.toml` in the current folder. Other files are preserved. Generation needs internet access to update Rust; the first launch downloads and builds dependencies.
+It uses the current folder name as the app name, updates Rust to the latest stable release, and creates a blank native window using the same pinned GPUI Kit revision as TerminalFlow, with `features = ["gpui-fast"]`. Folder names must start with a lowercase letter and contain only lowercase letters, digits, hyphens, or underscores. The generated `rust-toolchain.toml` and `run.sh` select stable Rust. Each run overwrites `Cargo.toml`, `src/main.rs`, `src/settings.rs`, `src/settings_view.rs`, `src/window_state.rs`, `run.sh`, `build.sh`, `.gitignore`, and `rust-toolchain.toml` in the current folder. Other files are preserved. Generation needs internet access to update Rust; the first launch downloads and builds dependencies.
 
 Check the generator with `python3 scripts/test_rust_gui_base_app.py` from the repository root. The check includes compiling the generated app and running its settings UI integration test; dependencies must already be cached for the offline Cargo checks.
 
 Generated apps follow the system light or dark appearance at startup and when it changes.
 
+Apps start centered at 1200 × 800. The last normal window size and position are saved on Quit or window close in `window-state.json`, next to `settings.json`. Restored geometry is fitted to the connected display; if its display was disconnected, the window is recentered on the primary display. Invalid geometry falls back to the default window and leaves the existing file untouched, with geometry saving disabled for that run. Maximized and fullscreen bounds do not replace the normal geometry. Clicking the running app’s Dock icon brings its existing window forward.
+
 The app menu includes **Settings…** (`Cmd+,` on macOS, `Ctrl+,` elsewhere) and **Quit** (`Cmd+Q` on macOS, `Ctrl+Q` elsewhere). Settings opens a dialog for the three example fields, with Save and Cancel. Escape discards the draft; Enter saves. Invalid numbers and save failures show an inline error and keep the draft open. Saved global settings change only after the file is written successfully.
 
-The dialog also has **Import…** and **Export…** buttons using native file pickers. Import validates a JSON file and fills the draft; choose Save to apply it or Cancel to discard it. Export copies the currently saved settings, excluding unsaved edits. Picker cancellation leaves settings unchanged, and transfer failures appear inline. Settings JSON is limited to 1 MiB for both reads and writes.
+The dialog also has **Import settings…** and **Export settings…** buttons using native file pickers. Import validates a JSON file and fills the draft; choose Save to apply it or Cancel to discard it. Export copies the currently saved settings, excluding unsaved edits. Picker cancellation leaves settings unchanged, and transfer failures appear inline. Settings JSON is limited to 1 MiB for both reads and writes.
+
+The generated asset source adds Lucide Upload and Download icons for these buttons to the default component icons, without embedding the full icon catalog.
 
 The generated `src/settings.rs` provides JSON persistence with three example fields: `display_name`, `notifications_enabled`, and `recent_items_limit`. Replace them with your own settings and update `src/settings_view.rs`. On first launch, the app creates defaults at the platform's local app data directory under `<app-name>/settings.json`: `~/Library/Application Support/<app-name>/settings.json` on macOS, `%LOCALAPPDATA%\<app-name>\settings.json` on Windows, and `$XDG_DATA_HOME/<app-name>/settings.json` (normally `~/.local/share`) on Linux. Missing fields use defaults. Invalid JSON, field types, or inaccessible app data show an error dialog with recovery instructions. The app opens with in-memory defaults and settings editing is disabled until you fix the file or permissions and restart. Existing files remain untouched. Saves write and sync a temporary file before replacing the original.
 
@@ -287,20 +291,4 @@ CI release ZIPs use ad-hoc signing; Apple notarization is not configured.
 | Quit | ⌘Q |
 
 Additional Ctrl bindings are available: **Ctrl+P** for the palette, **Ctrl+T** for a new tab, **Ctrl+Shift+D / Ctrl+Alt+D** for splits, **Ctrl+Alt+←/→** for panes, **Ctrl+W** to close a tab, **Ctrl+Shift+W** to close a pane, **Ctrl+Shift+F** for search, **Ctrl+Shift+C/V/A** for copy/paste/select all, **Ctrl+Shift+K** to clear, **Ctrl+Shift+B** for status, **Ctrl+Shift+S** for servers, **Ctrl+,** for settings, and **Ctrl+Shift+=/−/0** for zoom. **Ctrl+Insert / Shift+Insert** also copy and paste. On non-macOS platforms, **Ctrl+F**, **Ctrl+O**, and **Ctrl+S** are also bound to search, open, and editor save.
-
-## Claude for Startups application
-
-For the [Claude for Startups program](https://claude.com/programs/startups), this short description summarizes the current product and intended Claude usage:
-
-> TerminalFlow is a native terminal workspace built in Rust for developers working across local projects and remote servers. It combines shell sessions, SSH, SFTP transfers, and a built-in file editor. We plan to integrate the Claude API to suggest shell commands from natural-language requests and explain terminal errors, helping developers troubleshoot within the same workspace. The Claude assistant is not yet implemented.
-
-Before [applying through Claude Console](https://platform.claude.com/offers/startups-application), prepare:
-
-- A Claude Console account.
-- A company website and a company email address matching its domain.
-- Your founding or funding date: the program currently accepts startups founded within the last five years or funded within the last two years, including bootstrapped startups.
-- A short description of the product and an accurate account of how you use or intend to use Claude.
-
-Check the linked program page for current requirements. Company details and eligibility must be supplied by the founder.
-
-Built with [GPUI Kit](https://github.com/longbridge/gpui-kit), [WezTerm's `wezterm-term`](https://github.com/wezterm/wezterm/tree/main/term) emulator, and its `portable-pty` library.
+ 
