@@ -96,6 +96,7 @@ struct SshForm {
     password: Entity<InputState>,
     key: Entity<InputState>,
     directory: Entity<InputState>,
+    run_command: Entity<TextareaState>,
     authentication: Authentication,
     icon: String,
     error: Option<String>,
@@ -143,6 +144,11 @@ impl SshForm {
                 cx,
             ),
             authentication: profile.authentication,
+            run_command: cx.new(|cx| {
+                let mut state = TextareaState::new(window, cx).placeholder("tmux attach");
+                state.set_value(profile.run_command.clone(), window, cx);
+                state
+            }),
             icon: profile.icon.clone(),
             owner,
             original: profile,
@@ -166,6 +172,7 @@ impl SshForm {
                 .map_err(|_| anyhow::anyhow!("Port must be between 1 and 65535."))?;
             profile.authentication = self.authentication;
             profile.remote_directory = self.directory.read(cx).value().trim().to_string();
+            profile.run_command = self.run_command.read(cx).value().to_string();
             let key = self.key.read(cx).value().trim().to_string();
             profile.private_key =
                 if profile.authentication == Authentication::PrivateKey && !key.is_empty() {
@@ -401,6 +408,20 @@ impl Render for SshForm {
                     .label("Remote directory (optional)")
                     .col_span(2)
                     .child(Input::new(&self.directory).id("ssh-directory")),
+            )
+            .child(
+                Field::new()
+                    .label("Run command after connect (optional)")
+                    .col_span(2)
+                    .description("Runs in the remote directory before opening the shell.")
+                    .child(
+                        Textarea::new(&self.run_command)
+                            .accessibility_id("ssh-run-command")
+                            .aria_label("Run command after connect")
+                            .font_family(cx.theme().mono_font_family.clone())
+                            .h_20()
+                            .w_full(),
+                    ),
             );
         div()
             .flex()
@@ -2370,6 +2391,17 @@ mod tests {
             assert!(window.find("form-error").label().unwrap().contains("Port"));
             assert!(workspace.read(cx).settings.ssh_servers.is_empty());
             fill(window, "ssh-port", "2222", cx);
+            let command = gpui_kit::base::test_support::snapshots(window)
+                .into_iter()
+                .find(|item| item.label() == Some("Run command after connect"))
+                .unwrap();
+            assert_eq!(command.value(), Some(""));
+            fill(
+                window,
+                command.path().last().unwrap().clone(),
+                "pwd\nls -la",
+                cx,
+            );
             window.click("ok", cx);
         })
         .unwrap();
@@ -2379,6 +2411,7 @@ mod tests {
         assert_eq!(profile.name, "Production");
         assert_eq!(profile.icon, "alpine-linux");
         assert_eq!(profile.port, 2222);
+        assert_eq!(profile.run_command, "pwd\nls -la");
         assert_eq!(
             store
                 .decrypt(&profile.id, profile.secret.as_ref().unwrap())
@@ -2424,6 +2457,17 @@ mod tests {
         cx.update_window(handle.into(), |_, window, cx| {
             window.render_frame(cx);
             fill(window, "ssh-name", "Staging", cx);
+            let command = gpui_kit::base::test_support::snapshots(window)
+                .into_iter()
+                .find(|item| item.label() == Some("Run command after connect"))
+                .unwrap();
+            assert_eq!(command.value(), Some("pwd\nls -la"));
+            fill(
+                window,
+                command.path().last().unwrap().clone(),
+                "tmux attach",
+                cx,
+            );
             window.click("ok", cx);
         })
         .unwrap();
@@ -2434,6 +2478,7 @@ mod tests {
         assert_eq!(edited.ssh_servers[0].name, "Staging");
         assert_eq!(edited.ssh_servers[0].icon, "linux");
         assert_eq!(edited.ssh_servers[0].secret, profile.secret);
+        assert_eq!(edited.ssh_servers[0].run_command, "tmux attach");
         cx.update_window(handle.into(), |_, window, cx| {
             window.render_frame(cx);
             window.press(

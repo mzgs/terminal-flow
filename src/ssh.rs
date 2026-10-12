@@ -122,7 +122,7 @@ fn build_command(
     command.arg(&profile.username);
     command.arg("--");
     command.arg(&profile.host);
-    command.arg(remote_command(directory));
+    command.arg(remote_command(directory, &profile.run_command));
     Ok(command)
 }
 
@@ -357,7 +357,7 @@ pub(crate) fn quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\\''"))
 }
 
-fn remote_command(directory: &str) -> String {
+fn remote_command(directory: &str, run_command: &str) -> String {
     let cd = if directory.is_empty() {
         String::new()
     } else {
@@ -366,11 +366,18 @@ fn remote_command(directory: &str) -> String {
     // Escape URL delimiters before emitting OSC 7 so paths containing %, # or ? round-trip.
     let emit = r#"printf '\033]7;file://localhost%s\007' "$(printf '%s' "$PWD" | sed 's/%/%25/g;s/#/%23/g;s/?/%3F/g')""#;
     let prompt = quote(emit);
+    let startup = if run_command.trim().is_empty() {
+        String::new()
+    } else {
+        // Mark the connection ready even when the startup command runs indefinitely.
+        format!("emit_cwd\neval {}", quote(run_command))
+    };
     // OSC 7 lets WezTerm record the remote directory without polling a local SSH process.
     let script = format!(
         r#"shell_path=${{SHELL:-/bin/sh}}
 {cd}
 emit_cwd() {{ {emit}; }}
+{startup}
 case "${{shell_path##*/}}" in
   bash)
     export PROMPT_COMMAND={prompt}
@@ -410,6 +417,32 @@ exec "$shell_path" -il"#
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn startup_command_runs_remotely_before_the_shell_and_preserves_directory() -> Result<()> {
+        for startup in ["", " \n ", "printf '%s\\n' \"it's connected\"\ncd /\nfalse"] {
+            let profile = SshProfile {
+                name: "Startup test".into(),
+                host: "localhost".into(),
+                run_command: startup.into(),
+                ..SshProfile::default()
+            };
+            let command = build_command(&profile, "/tmp", None)?;
+            let output = Command::new("/bin/sh")
+                .arg("-c")
+                .arg(command.get_argv().last().unwrap())
+                .env("SHELL", "/usr/bin/true")
+                .output()?;
+            assert!(output.status.success());
+            let expected = if startup.trim().is_empty() {
+                "\x1b]7;file://localhost/tmp\x07"
+            } else {
+                "\x1b]7;file://localhost/tmp\x07it's connected\n\x1b]7;file://localhost/\x07"
+            };
+            assert_eq!(String::from_utf8(output.stdout)?, expected);
+        }
+        Ok(())
+    }
 
     #[test]
     fn changed_host_keys_recover_once_and_only_during_startup() {
@@ -658,7 +691,7 @@ mod tests {
         assert!(upload_command(&profile, directory, &[root.join("missing")], None).is_err());
 
         let output = Command::new("/bin/sh")
-            .args(["-c", &remote_command(directory)])
+            .args(["-c", &remote_command(directory, "")])
             .env("SHELL", "/usr/bin/true")
             .output()?;
         assert!(output.status.success());
@@ -736,7 +769,7 @@ mod tests {
         assert_eq!(command.get_env("SSH_ASKPASS_REQUIRE").unwrap(), "force");
         assert!(build_command(&profile, "", None).is_err());
         let mut script = std::process::Command::new("/bin/sh");
-        script.args(["-n", "-c", &remote_command("/srv/a'b;$HOME")]);
+        script.args(["-n", "-c", &remote_command("/srv/a'b;$HOME", "")]);
         assert!(script.status()?.success());
         Ok(())
     }

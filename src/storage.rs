@@ -132,6 +132,7 @@ pub(crate) struct SshProfile {
     pub authentication: Authentication,
     pub private_key: Option<PathBuf>,
     pub remote_directory: String,
+    pub run_command: String,
     #[serde(rename = "password", alias = "secret")]
     pub secret: Option<String>,
 }
@@ -148,6 +149,7 @@ impl Default for SshProfile {
             authentication: Authentication::PrivateKey,
             private_key: None,
             remote_directory: String::new(),
+            run_command: String::new(),
             secret: None,
         }
     }
@@ -180,6 +182,10 @@ impl SshProfile {
         ensure!(
             !self.remote_directory.contains(['\0', '\n', '\r']),
             "Remote directory must be a single path."
+        );
+        ensure!(
+            !self.run_command.contains('\0'),
+            "Run command must not contain NUL characters."
         );
         Ok(())
     }
@@ -730,7 +736,18 @@ mod tests {
         };
         let mut legacy = serde_json::to_value(&profile)?;
         legacy.as_object_mut().unwrap().remove("icon");
-        assert_eq!(serde_json::from_value::<SshProfile>(legacy)?.icon, "linux");
+        legacy.as_object_mut().unwrap().remove("run_command");
+        let legacy = serde_json::from_value::<SshProfile>(legacy)?;
+        assert_eq!(legacy.icon, "linux");
+        assert!(legacy.run_command.is_empty());
+        assert!(
+            SshProfile {
+                run_command: "echo\0bad".into(),
+                ..profile.clone()
+            }
+            .validate()
+            .is_err()
+        );
         let settings = Settings {
             ssh_servers: vec![profile.clone()],
             ..Settings::default()
