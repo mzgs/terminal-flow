@@ -1,5 +1,5 @@
 use super::{
-    AddSshServer, CloseTab, ManageSshServers, NewTab, NextTab, OpenSettings, PreviousTab, Restart,
+    AddSshServer, CloseTab, ManageSshServers, NewTab, NextTab, OpenSettings, PreviousTab,
     TerminalView,
 };
 use crate::{
@@ -1072,8 +1072,6 @@ impl Render for Workspace {
         }
         let active = self.tabs[self.active_ix()].active_terminal().clone();
         let terminal = active.read(cx);
-        let running = terminal.running;
-        let connecting = terminal.connecting;
         let browser = terminal.browser.clone();
         let remote = matches!(terminal.source, TabSource::Ssh { .. });
         let directory = Self::directory(terminal);
@@ -1561,23 +1559,7 @@ impl Render for Workspace {
                                         }
                                     }),
                             ),
-                    )
-                    .when(!remote && !running && !connecting, |bar| {
-                        bar.child(
-                            Button::new("restart")
-                                .outline()
-                                .small()
-                                .label("Restart shell")
-                                .on_click({
-                                    let active = active.clone();
-                                    move |_, window, cx| {
-                                        active.update(cx, |view, cx| {
-                                            view.restart(&Restart, window, cx)
-                                        })
-                                    }
-                                }),
-                        )
-                    }),
+                    ),
             )
             .when_some(self.persistence_error.clone(), |view, message| {
                 view.child(
@@ -3205,8 +3187,8 @@ mod tests {
             first.update(cx, |view, cx| view.read_output(cx));
             window.render_frame(cx);
             assert!(!first.read(cx).running);
-            assert!(window.try_find("restart").is_some());
-            window.click("restart", cx);
+            assert!(window.try_find("restart").is_none());
+            window.press("cmd-r", cx);
             assert!(first.read(cx).running);
             assert!(first.read(cx).focus.is_focused(window));
             assert_eq!(workspace.read(cx).tabs.len(), 2);

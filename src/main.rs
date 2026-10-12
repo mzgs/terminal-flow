@@ -640,7 +640,7 @@ impl TerminalView {
         self.selection = None;
         self.drag_selection = None;
         if let Some(session) = &mut self.session
-            && let Err(error) = session.terminal.key_down(key, modifiers)
+            && let Err(error) = session.key_down(key, modifiers)
         {
             self.status = format!("Couldn’t send input: {error}");
         }

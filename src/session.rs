@@ -10,7 +10,9 @@ use std::{
     thread,
     time::{Duration, Instant},
 };
-use wezterm_term::{Terminal, TerminalConfiguration, TerminalSize, color::ColorPalette};
+use wezterm_term::{
+    KeyCode, KeyModifiers, Terminal, TerminalConfiguration, TerminalSize, color::ColorPalette,
+};
 
 #[derive(Debug)]
 struct Configuration(ColorPalette);
@@ -116,6 +118,30 @@ impl Session {
         *self.terminal.palette_mut() = palette.clone();
         self.terminal.set_config(Arc::new(Configuration(palette)));
         self.terminal.implicit_palette_reset_if_same_as_configured();
+    }
+
+    pub(crate) fn key_down(&mut self, key: KeyCode, modifiers: KeyModifiers) -> Result<()> {
+        // shortcut: local Unix shells only; SSH protection needs remote shell integration.
+        #[cfg(unix)]
+        if key == KeyCode::Char('d')
+            && modifiers == KeyModifiers::CTRL
+            && let Some(pid) = self.child.as_ref().and_then(|child| child.process_id())
+            && self.master.process_group_leader() == Some(pid as _)
+            && let Some(executable) = procinfo::LocalProcessInfo::executable_path(pid)
+            && [
+                "sh", "bash", "zsh", "fish", "dash", "ksh", "ksh93", "csh", "tcsh", "nu", "xonsh",
+            ]
+            .contains(
+                &executable
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .unwrap_or_default(),
+            )
+        {
+            // Only protect the original shell; foreground jobs and nested shells need EOF.
+            return Ok(());
+        }
+        self.terminal.key_down(key, modifiers)
     }
 
     pub(crate) fn update_current_directory(&mut self) -> bool {
@@ -231,6 +257,82 @@ mod tests {
             bytes.recv_timeout(Duration::from_secs(1)).unwrap(),
             b"\x1b[A"
         );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn ctrl_d_preserves_root_shell_but_exits_foreground_programs() -> Result<()> {
+        let mut command = CommandBuilder::new("/bin/sh");
+        command.arg("-i");
+        command.env("PS1", "ROOT_PROMPT> ");
+        let mut session =
+            Session::spawn(command, TerminalSize::default(), ColorPalette::default())?;
+        let wait_for_prompt = |session: &Session, prompt: &str| -> Result<()> {
+            let deadline = Instant::now() + Duration::from_secs(5);
+            let mut output = Vec::new();
+            loop {
+                match session
+                    .output
+                    .recv_timeout(deadline.saturating_duration_since(Instant::now()))?
+                {
+                    Output::Bytes(bytes) => {
+                        output.extend(bytes);
+                        if String::from_utf8_lossy(&output).contains(prompt) {
+                            return Ok(());
+                        }
+                    }
+                    Output::Closed => anyhow::bail!("Root shell exited"),
+                    Output::Error(error) => anyhow::bail!(error),
+                }
+            }
+        };
+        wait_for_prompt(&session, "ROOT_PROMPT> ")?;
+        let root_pid = session.child.as_ref().unwrap().process_id().unwrap();
+        for program in ["cat", "python3 -q", "/bin/sh -i", "exec cat"] {
+            // Repeated EOF must not eventually force the root shell to exit.
+            for _ in 0..32 {
+                session.key_down(KeyCode::Char('d'), KeyModifiers::CTRL)?;
+            }
+            session.terminal.send_paste(&format!("{program}\n"))?;
+            let deadline = Instant::now() + Duration::from_secs(5);
+            loop {
+                let foreground_pid = session.master.process_group_leader().map(|pid| pid as u32);
+                let executable = procinfo::LocalProcessInfo::executable_path(root_pid);
+                if foreground_pid.is_some_and(|pid| pid != root_pid)
+                    || executable.as_ref().and_then(|path| path.file_name()) == Some("cat".as_ref())
+                {
+                    break;
+                }
+                anyhow::ensure!(
+                    Instant::now() < deadline,
+                    "Program did not start: {program}"
+                );
+                thread::sleep(Duration::from_millis(10));
+            }
+            match program {
+                "python3 -q" => wait_for_prompt(&session, ">>> ")?,
+                "/bin/sh -i" => wait_for_prompt(&session, "ROOT_PROMPT> ")?,
+                _ => (),
+            }
+            session.key_down(KeyCode::Char('d'), KeyModifiers::CTRL)?;
+            if program != "exec cat" {
+                wait_for_prompt(&session, "ROOT_PROMPT> ")?;
+                assert_eq!(session.master.process_group_leader(), Some(root_pid as _));
+                assert!(session.exit_status()?.is_none());
+            }
+        }
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            match session
+                .output
+                .recv_timeout(deadline.saturating_duration_since(Instant::now()))?
+            {
+                Output::Closed => break,
+                Output::Bytes(_) => (),
+                Output::Error(error) => anyhow::bail!(error),
+            }
+        }
+        Ok(())
     }
 
     #[test]
