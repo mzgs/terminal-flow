@@ -184,6 +184,7 @@ struct TerminalView {
     search_dirty: bool,
     _search_subscription: Subscription,
     selection: Option<Selection>,
+    click_anchor: Option<CellPosition>,
     drag_selection: Option<Selection>,
     mouse_button: Option<MouseButton>,
     pending_link: Option<(Point<Pixels>, links::Link)>,
@@ -306,6 +307,7 @@ impl TerminalView {
             search_dirty: false,
             _search_subscription: search_subscription,
             selection: None,
+            click_anchor: None,
             drag_selection: None,
             mouse_button: None,
             pending_link: None,
@@ -490,6 +492,7 @@ impl TerminalView {
                 self.running = true;
                 self.wheel_remainder = 0.;
                 self.selection = None;
+                self.click_anchor = None;
                 self.drag_selection = None;
             }
             Err(error) => {
@@ -567,6 +570,7 @@ impl TerminalView {
                         self.search_matches.clear();
                         self.search_active = None;
                         self.selection = None;
+                        self.click_anchor = None;
                         self.drag_selection = None;
                         self.scroll_offset = 0.;
                         self.wheel_remainder = 0.;
@@ -638,6 +642,7 @@ impl TerminalView {
         self.cursor_epoch = Instant::now();
         self.cursor_on = true;
         self.selection = None;
+        self.click_anchor = None;
         self.drag_selection = None;
         if let Some(session) = &mut self.session
             && let Err(error) = session.key_down(key, modifiers)
@@ -663,12 +668,45 @@ impl TerminalView {
             return;
         }
         if stroke.key == "escape" && self.selection.take().is_some() {
+            self.click_anchor = None;
             self.drag_selection = None;
             cx.notify();
             cx.stop_propagation();
             return;
         }
         if stroke.modifiers.shift && !stroke.modifiers.control && !stroke.modifiers.alt {
+            if let Some(
+                key @ (KeyCode::LeftArrow
+                | KeyCode::RightArrow
+                | KeyCode::UpArrow
+                | KeyCode::DownArrow),
+            ) = terminal_key(stroke)
+            {
+                if let Some(session) = &self.session {
+                    let (selection, head) =
+                        Selection::keyboard(&session.terminal, self.selection, key);
+                    self.selection = Some(selection);
+                    self.drag_selection = None;
+                    let screen = session.terminal.screen();
+                    if let Some(row) = screen.stable_row_to_phys(head.0) {
+                        let bottom = screen
+                            .scrollback_rows()
+                            .saturating_sub(screen.physical_rows);
+                        let top = bottom as f32 - self.scroll_offset;
+                        let offset = if (row as f32) < top {
+                            bottom.saturating_sub(row) as f32
+                        } else if row as f32 + 1. > top + screen.physical_rows as f32 {
+                            screen.scrollback_rows().saturating_sub(row + 1) as f32
+                        } else {
+                            self.scroll_offset
+                        };
+                        self.set_scroll_offset(offset, cx);
+                    }
+                    cx.notify();
+                }
+                cx.stop_propagation();
+                return;
+            }
             let rows = self
                 .session
                 .as_ref()
@@ -703,6 +741,7 @@ impl TerminalView {
             }
             self.scroll_offset = 0.;
             self.selection = None;
+            self.click_anchor = None;
             self.drag_selection = None;
             cx.notify();
         }
@@ -724,6 +763,7 @@ impl TerminalView {
                     }
                     self.scroll_offset = 0.;
                     self.selection = None;
+                    self.click_anchor = None;
                     self.drag_selection = None;
                 }
                 Err(error) => self.status = error.to_string(),
@@ -958,7 +998,7 @@ impl TerminalView {
     }
 
     fn selected_link(&self) -> Option<links::Target> {
-        let selection = self.selection?;
+        let selection = self.selection.filter(|selection| !selection.is_empty())?;
         let terminal = &self.session.as_ref()?.terminal;
         if let Some(link) = links::at(terminal, selection.bounds().0)
             && link.selection.bounds() == selection.bounds()
@@ -1013,6 +1053,7 @@ impl TerminalView {
         match result {
             Ok(()) => {
                 self.selection = None;
+                self.click_anchor = None;
                 self.drag_selection = None;
                 self.scroll_offset = 0.;
             }
@@ -1064,6 +1105,7 @@ impl TerminalView {
                 .key_down(KeyCode::Enter, KeyModifiers::NONE)?;
         }
         self.selection = None;
+        self.click_anchor = None;
         self.drag_selection = None;
         self.scroll_offset = 0.;
         Ok(())
@@ -1319,7 +1361,12 @@ impl TerminalView {
     }
 
     fn copy(&mut self, _: &Copy, window: &mut Window, cx: &mut Context<Self>) {
-        if let (Some(selection), Some(session)) = (&self.selection, &self.session) {
+        if let (Some(selection), Some(session)) = (
+            self.selection
+                .as_ref()
+                .filter(|selection| !selection.is_empty()),
+            &self.session,
+        ) {
             cx.write_to_clipboard(ClipboardItem::new_string(selection.text(&session.terminal)));
         }
         window.focus(&self.focus, cx);
@@ -1341,6 +1388,7 @@ impl TerminalView {
         }
         self.refresh_search(false, cx);
         self.selection = None;
+        self.click_anchor = None;
         self.drag_selection = None;
         self.scroll_offset = 0.;
         window.focus(&self.focus, cx);
@@ -1453,6 +1501,7 @@ impl TerminalView {
         ) {
             self.mouse_button = Some(event.button);
             self.selection = None;
+            self.click_anchor = None;
             self.drag_selection = None;
         } else if event.button == MouseButton::Left {
             if let (Some(at), Some(session)) = (self.cell_at(event.position), &self.session) {
@@ -1461,13 +1510,19 @@ impl TerminalView {
                     2 => SelectionMode::Word,
                     _ => SelectionMode::Line,
                 };
-                let mut selection = Selection::new(&session.terminal, at, mode);
-                if event.modifiers.shift
-                    && let Some(previous) = self.selection
-                {
-                    selection = previous;
+                let anchor = if event.modifiers.shift {
+                    self.click_anchor.unwrap_or(at)
+                } else {
+                    at
+                };
+                let mut selection = Selection::new(&session.terminal, anchor, mode);
+                if event.modifiers.shift {
+                    if let Some(previous) = self.selection {
+                        selection = previous;
+                    }
                     selection.extend(&session.terminal, at);
                 }
+                self.click_anchor = Some(anchor);
                 self.drag_selection = Some(selection);
                 self.selection =
                     (event.click_count > 1 || event.modifiers.shift).then_some(selection);
@@ -1687,6 +1742,7 @@ impl TerminalView {
                     resized = true;
                     self.scroll_offset = 0.;
                     self.selection = None;
+                    self.click_anchor = None;
                     self.drag_selection = None;
                     cx.notify();
                 }
@@ -1861,7 +1917,9 @@ impl Render for TerminalView {
         let line_height = self.appearance.line_height;
         let palette = self.appearance.palette();
         let menu_focus = self.focus.clone();
-        let has_selection = self.selection.is_some();
+        let has_selection = self
+            .selection
+            .is_some_and(|selection| !selection.is_empty());
         let show_open_link = self
             .selected_link()
             .is_some_and(|target| matches!(target, links::Target::Url(_)));
@@ -3832,6 +3890,206 @@ mod tests {
             window.press("down", cx);
             window.press("enter", cx);
             assert_eq!(clipboard(cx), "alpha beta\n你好 café");
+        })
+        .unwrap();
+    }
+
+    #[gpui_kit::test]
+    fn plain_click_then_shift_click_selects_between_positions(cx: &mut TestAppContext) {
+        let (handle, view, bytes) = open_terminal(cx);
+        let (_output, receiver) = mpsc::channel();
+        cx.update_window(handle.into(), |_, window, cx| {
+            window.render_frame(cx);
+            view.update(cx, |view, cx| {
+                let session = view.session.as_mut().unwrap();
+                session.output = receiver;
+                session.terminal.advance_bytes("alpha beta\r\n你好 café");
+                cx.notify();
+            });
+            window.render_frame(cx);
+            let bounds = view.read(cx).bounds;
+            let cell = view.read(cx).cell_size;
+            let copy_key = if cfg!(target_os = "macos") {
+                "cmd-c"
+            } else {
+                "ctrl-shift-c"
+            };
+            for (column, row, shift, expected) in [
+                (0.5, 0.5, false, None),
+                (4.5, 0.5, true, Some("alpha")),
+                (9.5, 0.5, true, Some("alpha beta")),
+                (9.5, 0.5, false, None),
+                (6.5, 0.5, true, Some("beta")),
+                (0.5, 0.5, true, Some("alpha beta")),
+                (6.5, 0.5, false, None),
+                (8.5, 1.5, true, Some("beta\n你好 café")),
+                (0.5, 1.5, false, None),
+                (8.5, 1.5, true, Some("你好 café")),
+            ] {
+                let position = bounds.origin + point(cell.width * column, cell.height * row);
+                let modifiers = Modifiers {
+                    shift,
+                    ..Default::default()
+                };
+                window.dispatch_event(
+                    MouseDownEvent {
+                        button: MouseButton::Left,
+                        position,
+                        click_count: 1,
+                        modifiers,
+                        ..Default::default()
+                    }
+                    .to_platform_input(),
+                    cx,
+                );
+                window.dispatch_event(
+                    MouseUpEvent {
+                        button: MouseButton::Left,
+                        position,
+                        click_count: 1,
+                        modifiers,
+                    }
+                    .to_platform_input(),
+                    cx,
+                );
+                if let Some(expected) = expected {
+                    window.press(copy_key, cx);
+                    assert_eq!(cx.read_from_clipboard().unwrap().text().unwrap(), expected);
+                } else {
+                    assert!(
+                        view.read(cx).selection.is_none(),
+                        "the first click only sets an anchor"
+                    );
+                    assert!(view.read(cx).click_anchor.is_some());
+                }
+            }
+            assert!(bytes.try_recv().is_err());
+            window.press("escape", cx);
+            assert!(view.read(cx).click_anchor.is_none());
+            window.dispatch_event(
+                MouseDownEvent {
+                    button: MouseButton::Left,
+                    position: bounds.origin + point(cell.width * 2.5, cell.height * 0.5),
+                    click_count: 1,
+                    ..Default::default()
+                }
+                .to_platform_input(),
+                cx,
+            );
+            window.dispatch_event(
+                MouseUpEvent {
+                    button: MouseButton::Left,
+                    position: bounds.origin + point(cell.width * 2.5, cell.height * 0.5),
+                    click_count: 1,
+                    ..Default::default()
+                }
+                .to_platform_input(),
+                cx,
+            );
+            window.press("left", cx);
+            assert!(view.read(cx).click_anchor.is_none());
+            assert_eq!(
+                bytes.recv_timeout(Duration::from_secs(1)).unwrap(),
+                b"\x1b[D"
+            );
+        })
+        .unwrap();
+    }
+
+    #[gpui_kit::test]
+    fn shift_arrows_select_copy_and_reveal_text_without_shell_input(cx: &mut TestAppContext) {
+        let (handle, view, bytes) = open_terminal(cx);
+        let (_output, receiver) = mpsc::channel();
+        cx.update_window(handle.into(), |_, window, cx| {
+            window.render_frame(cx);
+            view.update(cx, |view, cx| {
+                let session = view.session.as_mut().unwrap();
+                session.output = receiver;
+                session.terminal.advance_bytes("alpha beta\r\n你好 café");
+                cx.notify();
+            });
+            window.render_frame(cx);
+            let focus = view.read(cx).focus.clone();
+            window.focus(&focus, cx);
+            let copy_key = if cfg!(target_os = "macos") {
+                "cmd-c"
+            } else {
+                "ctrl-shift-c"
+            };
+            for (key, expected) in [
+                ("shift-left", "é"),
+                ("shift-left", "fé"),
+                ("shift-right", "é"),
+            ] {
+                window.press(key, cx);
+                window.press(copy_key, cx);
+                assert_eq!(cx.read_from_clipboard().unwrap().text().unwrap(), expected);
+            }
+            window.press("shift-right", cx);
+            assert!(view.read(cx).selection.unwrap().is_empty());
+            cx.write_to_clipboard(ClipboardItem::new_string("keep clipboard".into()));
+            window.press(copy_key, cx);
+            assert_eq!(
+                cx.read_from_clipboard().unwrap().text().unwrap(),
+                "keep clipboard"
+            );
+            window.press("escape", cx);
+            assert!(view.read(cx).selection.is_none());
+
+            let bounds = view.read(cx).bounds;
+            let cell = view.read(cx).cell_size;
+            let at = |column| bounds.origin + point(cell.width * column, cell.height * 0.5);
+            window.drag(at(6.5), at(9.5), cx);
+            window.press("shift-left", cx);
+            window.press(copy_key, cx);
+            assert_eq!(cx.read_from_clipboard().unwrap().text().unwrap(), "bet");
+            window.press("shift-right", cx);
+            window.press(copy_key, cx);
+            assert_eq!(cx.read_from_clipboard().unwrap().text().unwrap(), "beta");
+            assert!(
+                bytes.try_recv().is_err(),
+                "selecting and copying must not type into the shell"
+            );
+            window.press("left", cx);
+            assert_eq!(
+                bytes.recv_timeout(Duration::from_secs(1)).unwrap(),
+                b"\x1b[D"
+            );
+            assert!(view.read(cx).selection.is_none());
+
+            let rows = view
+                .read(cx)
+                .session
+                .as_ref()
+                .unwrap()
+                .terminal
+                .screen()
+                .physical_rows;
+            view.update(cx, |view, cx| {
+                view.session
+                    .as_mut()
+                    .unwrap()
+                    .terminal
+                    .advance_bytes("\r\nhistory".repeat(rows * 2));
+                cx.notify();
+            });
+            for _ in 0..=rows {
+                window.press("shift-up", cx);
+            }
+            assert!(view.read(cx).scroll_offset > 0.);
+            let terminal = view.read(cx);
+            let session = terminal.session.as_ref().unwrap();
+            let start = terminal.selection.unwrap().bounds().0.0;
+            assert!(
+                super::visible_range(session, terminal.scroll_offset)
+                    .contains(&session.terminal.screen().stable_row_to_phys(start).unwrap())
+            );
+            for _ in 0..=rows {
+                window.press("shift-down", cx);
+            }
+            assert!(view.read(cx).selection.unwrap().is_empty());
+            assert_eq!(view.read(cx).scroll_offset, 0.);
+            assert!(bytes.try_recv().is_err());
         })
         .unwrap();
     }

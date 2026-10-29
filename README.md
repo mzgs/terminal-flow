@@ -43,7 +43,8 @@ The goal is to reduce the time spent looking up commands and interpreting failur
 
 ### Selection, clipboard, and search
 
-- Drag to select text, double-click for a word or path, triple-click for a line, and Shift-click to extend a selection.
+- Click once to set a starting point, then **Shift-click** elsewhere to select the text between the two positions. Drag to select text, double-click for a word or path, triple-click for a line, and Shift-click to extend a selection.
+- Use **Shift+Arrow keys** to select text from the terminal cursor or extend an existing selection. **Shift+PageUp/PageDown/Home/End** scroll the terminal history.
 - Hold **Shift** to select text in terminal apps that capture the mouse.
 - Copy selected text, copy the visible screen, select all scrollback, paste from the clipboard, and paste with the middle mouse button.
 - Selection handles Unicode and wrapped lines across scrollback.
@@ -276,6 +277,7 @@ CI release ZIPs use ad-hoc signing; Apple notarization is not configured.
 | Find in terminal | ⌘F |
 | Next / previous search result | ⌘G / ⌘⇧G |
 | Copy selection | ⌘C or ⌘⇧C |
+| Extend text selection | ⇧← / ⇧→ / ⇧↑ / ⇧↓ |
 | Open selected link or file | ⌘Enter |
 | Copy visible screen | ⌘⌥C |
 | Paste | ⌘V |

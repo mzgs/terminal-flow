@@ -209,6 +209,7 @@ fn resize_clear_alternate_screen_and_closed_output_reset_stale_state(cx: &mut Te
                 assert_eq!(view.scroll_offset, 0.);
                 if bytes != b"\x1b[3J\x1b[2J\x1b[H" {
                     assert!(view.selection.is_none());
+                    assert!(view.click_anchor.is_none());
                     assert!(view.drag_selection.is_none());
                     assert!(view.search_matches.is_empty());
                 }

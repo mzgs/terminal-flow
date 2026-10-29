@@ -1,5 +1,5 @@
 use std::ops::Range;
-use wezterm_term::{StableRowIndex, Terminal};
+use wezterm_term::{KeyCode, StableRowIndex, Terminal};
 
 pub(crate) fn extract_command(path: &str, windows: bool) -> Option<String> {
     crate::ssh::selected_path(path).ok()?;
@@ -100,6 +100,8 @@ pub(crate) struct Selection {
     anchor: (CellPosition, CellPosition),
     head: (CellPosition, CellPosition),
     mode: SelectionMode,
+    // Keyboard endpoints are between cells so reversing direction can deselect text.
+    keyboard: Option<(CellPosition, CellPosition)>,
 }
 
 impl Selection {
@@ -109,11 +111,99 @@ impl Selection {
             anchor,
             head: anchor,
             mode,
+            keyboard: None,
         }
     }
 
     pub(crate) fn extend(&mut self, terminal: &Terminal, at: CellPosition) {
+        self.keyboard = None;
         self.head = expand(terminal, at, self.mode);
+    }
+
+    pub(crate) fn keyboard(
+        terminal: &Terminal,
+        previous: Option<Self>,
+        key: KeyCode,
+    ) -> (Self, CellPosition) {
+        let screen = terminal.screen();
+        let first = screen.phys_to_stable_row_index(0);
+        let last = screen.phys_to_stable_row_index(screen.scrollback_rows() - 1);
+        let cols = screen.physical_cols;
+        let (anchor, head) = previous.map_or_else(
+            || {
+                let cursor = terminal.cursor_pos();
+                let at = (
+                    screen.phys_to_stable_row_index(screen.phys_row(cursor.y)),
+                    cursor.x,
+                );
+                (at, at)
+            },
+            |selection| {
+                selection.keyboard.unwrap_or_else(|| {
+                    if selection.head.0 < selection.anchor.0 {
+                        (
+                            (selection.anchor.1.0, selection.anchor.1.1 + 1),
+                            selection.head.0,
+                        )
+                    } else {
+                        (
+                            selection.anchor.0,
+                            (selection.head.1.0, selection.head.1.1 + 1),
+                        )
+                    }
+                })
+            },
+        );
+        let clamp = |at: CellPosition| {
+            let at = (at.0.clamp(first, last), at.1.min(cols));
+            if at.1 == cols && at.0 < last {
+                (at.0 + 1, 0)
+            } else {
+                at
+            }
+        };
+        let anchor = clamp(anchor);
+        let mut head = clamp(head);
+        match key {
+            KeyCode::LeftArrow => {
+                if head.1 > 0 {
+                    head = expand(terminal, (head.0, head.1 - 1), SelectionMode::Character).0;
+                } else if head.0 > first {
+                    head = expand(terminal, (head.0 - 1, cols - 1), SelectionMode::Character).0;
+                }
+            }
+            KeyCode::RightArrow if head.1 < cols => {
+                let end = expand(terminal, head, SelectionMode::Character).1;
+                head = (end.0, end.1 + 1);
+            }
+            KeyCode::UpArrow | KeyCode::DownArrow => {
+                head.0 = (head.0 + if key == KeyCode::UpArrow { -1 } else { 1 }).clamp(first, last);
+            }
+            _ => {}
+        }
+        let head = clamp(head);
+        let start = anchor.min(head);
+        let end = anchor.max(head);
+        let end = if start == end {
+            end
+        } else if end.1 == 0 {
+            (end.0 - 1, cols - 1)
+        } else {
+            (end.0, end.1 - 1)
+        };
+        let start = expand(terminal, start, SelectionMode::Character).0;
+        let end = expand(terminal, end, SelectionMode::Character).1;
+        let mut selection = if head < anchor {
+            Self::range(end, start)
+        } else {
+            Self::range(start, end)
+        };
+        selection.keyboard = Some((anchor, head));
+        (selection, head)
+    }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        self.keyboard.is_some_and(|(anchor, head)| anchor == head)
     }
 
     pub(crate) fn range(start: CellPosition, end: CellPosition) -> Self {
@@ -121,6 +211,7 @@ impl Selection {
             anchor: (start, start),
             head: (end, end),
             mode: SelectionMode::Character,
+            keyboard: None,
         }
     }
 
@@ -131,11 +222,7 @@ impl Selection {
             screen.phys_to_stable_row_index(screen.scrollback_rows() - 1),
             screen.physical_cols - 1,
         );
-        Self {
-            anchor: (first, first),
-            head: (last, last),
-            mode: SelectionMode::Character,
-        }
+        Self::range(first, last)
     }
 
     pub(crate) fn bounds(&self) -> (CellPosition, CellPosition) {
@@ -147,7 +234,7 @@ impl Selection {
 
     pub(crate) fn columns(&self, row: StableRowIndex, width: usize) -> Range<usize> {
         let (start, end) = self.bounds();
-        if row < start.0 || row > end.0 {
+        if self.is_empty() || row < start.0 || row > end.0 {
             return 0..0;
         }
         let left = if row == start.0 { start.1 } else { 0 };
@@ -156,6 +243,9 @@ impl Selection {
     }
 
     pub(crate) fn text(&self, terminal: &Terminal) -> String {
+        if self.is_empty() {
+            return String::new();
+        }
         let screen = terminal.screen();
         let (start, end) = self.bounds();
         let first = start.0.max(screen.phys_to_stable_row_index(0));
@@ -262,7 +352,108 @@ fn expand(
 
 #[cfg(test)]
 mod tests {
-    use super::{extract_command, google_search_url, run_command};
+    use super::{Selection, SelectionMode, extract_command, google_search_url, run_command};
+    use std::sync::Arc;
+    use wezterm_term::{KeyCode, Terminal, TerminalSize};
+
+    fn terminal(text: &str) -> Terminal {
+        let mut terminal = Terminal::new(
+            TerminalSize {
+                cols: 8,
+                rows: 3,
+                ..Default::default()
+            },
+            Arc::new(crate::tests::Configuration),
+            "test",
+            "1",
+            Box::new(std::io::sink()),
+        );
+        terminal.advance_bytes(text);
+        terminal
+    }
+
+    #[test]
+    fn keyboard_selection_reverses_across_unicode_and_wrapped_rows() {
+        let terminal = terminal("123456界é🙂");
+        let mut selection = None;
+        for (key, expected) in [
+            (KeyCode::LeftArrow, "🙂"),
+            (KeyCode::LeftArrow, "é🙂"),
+            (KeyCode::LeftArrow, "界é🙂"),
+            (KeyCode::LeftArrow, "6界é🙂"),
+            (KeyCode::RightArrow, "界é🙂"),
+            (KeyCode::RightArrow, "é🙂"),
+            (KeyCode::RightArrow, "🙂"),
+            (KeyCode::RightArrow, ""),
+        ] {
+            let (next, _) = Selection::keyboard(&terminal, selection, key);
+            assert_eq!(next.text(&terminal), expected);
+            assert_eq!(next.is_empty(), expected.is_empty());
+            selection = Some(next);
+        }
+        assert_eq!(selection.unwrap().columns(1, 8), 0..0);
+
+        let terminal = self::terminal("12345678x\x1b[1;8H");
+        let (selection, _) = Selection::keyboard(&terminal, None, KeyCode::RightArrow);
+        assert_eq!(selection.text(&terminal), "8");
+        let (selection, _) = Selection::keyboard(&terminal, Some(selection), KeyCode::RightArrow);
+        assert_eq!(selection.text(&terminal), "8x");
+        let (selection, _) = Selection::keyboard(&terminal, Some(selection), KeyCode::LeftArrow);
+        assert_eq!(selection.text(&terminal), "8");
+        let (selection, _) = Selection::keyboard(&terminal, Some(selection), KeyCode::LeftArrow);
+        assert!(selection.is_empty());
+
+        let terminal = self::terminal("界234567\r\na");
+        let (selection, _) = Selection::keyboard(&terminal, None, KeyCode::UpArrow);
+        assert_eq!(selection.text(&terminal), "界234567\na");
+        let (selection, _) = Selection::keyboard(&terminal, Some(selection), KeyCode::DownArrow);
+        assert!(selection.is_empty());
+    }
+
+    #[test]
+    fn keyboard_selection_extends_mouse_selections_and_clamps_to_history() {
+        let mut terminal = terminal("alpha\r\nbravo\r\ncharlie");
+        let first = terminal.screen().phys_to_stable_row_index(0);
+        for (anchor, head, key, expected) in [
+            ((first, 1), (first, 3), KeyCode::RightArrow, "lpha"),
+            ((first, 3), (first, 1), KeyCode::LeftArrow, "alph"),
+            ((first, 0), (first, 4), KeyCode::LeftArrow, "alph"),
+        ] {
+            let mut selection = Selection::new(&terminal, anchor, SelectionMode::Character);
+            selection.extend(&terminal, head);
+            let (selection, _) = Selection::keyboard(&terminal, Some(selection), key);
+            assert_eq!(selection.text(&terminal), expected);
+        }
+        terminal.advance_bytes("\x1b[1;3H");
+        let (selection, _) = Selection::keyboard(&terminal, None, KeyCode::DownArrow);
+        assert_eq!(selection.text(&terminal), "pha\nbr");
+        let (selection, _) = Selection::keyboard(&terminal, Some(selection), KeyCode::UpArrow);
+        assert!(selection.is_empty());
+        terminal.advance_bytes("\x1b[H");
+        for key in [KeyCode::LeftArrow, KeyCode::UpArrow] {
+            let (selection, head) = Selection::keyboard(&terminal, None, key);
+            assert!(selection.is_empty());
+            assert_eq!(head, (first, 0));
+        }
+        terminal.advance_bytes("\x1b[3;8H");
+        let (selection, _) = Selection::keyboard(&terminal, None, KeyCode::RightArrow);
+        let (selection, head) =
+            Selection::keyboard(&terminal, Some(selection), KeyCode::RightArrow);
+        assert_eq!(head, (first + 2, 8));
+        assert_eq!(selection.columns(first + 2, 8), 7..8);
+        terminal.advance_bytes("new\r\n".repeat(3600));
+        let (selection, head) = Selection::keyboard(&terminal, Some(selection), KeyCode::UpArrow);
+        assert!(terminal.screen().stable_row_to_phys(head.0).is_some());
+        selection.text(&terminal);
+        terminal.resize(TerminalSize {
+            cols: 2,
+            rows: 1,
+            ..Default::default()
+        });
+        let (selection, head) = Selection::keyboard(&terminal, Some(selection), KeyCode::LeftArrow);
+        assert!(head.1 <= 2);
+        selection.text(&terminal);
+    }
 
     #[test]
     fn selection_actions_choose_tools_and_encode_search_text() {
