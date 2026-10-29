@@ -2829,7 +2829,7 @@ fn bind_keys(cx: &mut App) {
         KeyBinding::new("cmd-shift-b", ShowStatusBar, Some("TerminalPane")),
         KeyBinding::new("ctrl-shift-b", ShowStatusBar, Some("TerminalPane")),
         KeyBinding::new("cmd-p", OpenCommandPalette, Some("Workspace")),
-        KeyBinding::new("ctrl-p", OpenCommandPalette, Some("Workspace")),
+        KeyBinding::new("ctrl-shift-p", OpenCommandPalette, Some("Workspace")),
         KeyBinding::new("cmd-f", Find, Some("TerminalPane")),
         #[cfg(not(target_os = "macos"))]
         KeyBinding::new("ctrl-f", Find, Some("TerminalPane")),

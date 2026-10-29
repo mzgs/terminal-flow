@@ -2430,6 +2430,40 @@ mod tests {
     }
 
     #[gpui_kit::test]
+    fn ctrl_p_reaches_the_terminal_without_opening_the_palette(cx: &mut TestAppContext) {
+        let (handle, workspace) = open(cx);
+        let terminal = cx.update(|cx| workspace.read(cx).tabs[0].panes[0].terminal.clone());
+        let (bytes, _output) = cx.update(|cx| capture(&terminal, cx));
+        for alternate_screen in [false, true] {
+            cx.update_window(handle.into(), |_, window, cx| {
+                terminal.update(cx, |view, cx| {
+                    if alternate_screen {
+                        view.session
+                            .as_mut()
+                            .unwrap()
+                            .terminal
+                            .advance_bytes(b"\x1b[?1049h");
+                    }
+                    cx.notify();
+                });
+                window.render_frame(cx);
+                window.press("ctrl-p", cx);
+            })
+            .unwrap();
+            cx.run_until_parked();
+            cx.update_window(handle.into(), |_, window, cx| {
+                window.render_frame(cx);
+                assert!(window.try_find("command-palette").is_none());
+                assert!(terminal.read(cx).focus.is_focused(window));
+            })
+            .unwrap();
+            assert_eq!(bytes.try_iter().flatten().collect::<Vec<_>>(), b"\x10");
+        }
+        cx.update_window(handle.into(), |_, window, _| window.remove_window())
+            .unwrap();
+    }
+
+    #[gpui_kit::test]
     fn command_palette_searches_executes_and_restores_focus(cx: &mut TestAppContext) {
         let (handle, workspace) = open(cx);
         let profile = SshProfile {
@@ -2530,7 +2564,7 @@ mod tests {
                 bytes.try_recv().is_err(),
                 "palette keys must not reach the shell"
             );
-            window.press("ctrl-p", cx);
+            window.press("ctrl-shift-p", cx);
         })
         .unwrap();
         cx.run_until_parked();

@@ -1159,7 +1159,7 @@ impl SettingsForm {
                 div()
                     .text_sm()
                     .text_color(cx.theme().muted_foreground)
-                    .child("Run commands from Cmd/Ctrl-P. Use $ to insert without pressing Enter and place the cursor at the marker."),
+                    .child("Run commands from Cmd-P or Ctrl-Shift-P. Use $ to insert without pressing Enter and place the cursor at the marker."),
             )
             .child(
                 Table::new()

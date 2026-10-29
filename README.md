@@ -101,7 +101,7 @@ Select text or a filename in terminal output, then use the context menu or comma
 
 ### Command palette and quick commands
 
-- **⌘P** opens a keyboard-driven palette with fuzzy, case-insensitive matching.
+- **⌘P / Ctrl+Shift+P** opens a keyboard-driven palette with fuzzy, case-insensitive matching. **Ctrl+P** is passed through to the shell or terminal app.
 - Search workspace actions, saved quick commands, and SSH servers; server searches also match usernames, hosts, and ports.
 - Add, edit, and delete named quick commands in **Settings → Quick Commands**, including multiline commands.
 - Run a quick command in the active local or SSH pane.
@@ -297,5 +297,4 @@ CI release ZIPs use ad-hoc signing; Apple notarization is not configured.
 | Zoom in / out / reset | ⌘+ / ⌘− / ⌘0 |
 | Quit | ⌘Q |
 
-Additional Ctrl bindings are available: **Ctrl+P** for the palette, **Ctrl+T** for a new tab, **Ctrl+Shift+D / Ctrl+Alt+D** for splits, **Ctrl+Alt+←/→** for panes, **Ctrl+W** to close a tab, **Ctrl+Shift+W** to close a pane, **Ctrl+Shift+F** for search, **Ctrl+Shift+C/V/A** for copy/paste/select all, **Ctrl+Shift+K** to clear, **Ctrl+Shift+B** for status, **Ctrl+Shift+S** for servers, **Ctrl+,** for settings, and **Ctrl+Shift+=/−/0** for zoom. **Ctrl+Insert / Shift+Insert** also copy and paste. On non-macOS platforms, **Ctrl+F**, **Ctrl+O**, and **Ctrl+S** are also bound to search, open, and editor save.
- 
+Additional Ctrl bindings are available: **Ctrl+Shift+P** for the palette, **Ctrl+T** for a new tab, **Ctrl+Shift+D / Ctrl+Alt+D** for splits, **Ctrl+Alt+←/→** for panes, **Ctrl+W** to close a tab, **Ctrl+Shift+W** to close a pane, **Ctrl+Shift+F** for search, **Ctrl+Shift+C/V/A** for copy/paste/select all, **Ctrl+Shift+K** to clear, **Ctrl+Shift+B** for status, **Ctrl+Shift+S** for servers, **Ctrl+,** for settings, and **Ctrl+Shift+=/−/0** for zoom. **Ctrl+Insert / Shift+Insert** also copy and paste. On non-macOS platforms, **Ctrl+F**, **Ctrl+O**, and **Ctrl+S** are also bound to search, open, and editor save.
