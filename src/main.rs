@@ -654,14 +654,58 @@ impl TerminalView {
     }
 
     fn on_key_down(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
-        // Desktop shortcuts are dispatched by GPUI. Printable text comes through the IME handler.
-        if event.keystroke.modifiers.platform {
-            return;
-        }
+        let stroke = &event.keystroke;
         if !self.composition.is_empty() && !event.keystroke.modifiers.control {
             return;
         }
-        let stroke = &event.keystroke;
+        // Desktop shortcuts are dispatched by GPUI. Printable text comes through the IME handler.
+        if stroke.modifiers.platform {
+            if stroke.modifiers
+                == (Modifiers {
+                    platform: true,
+                    ..Modifiers::default()
+                })
+            {
+                match stroke.key.as_str() {
+                    "left" => self.input(KeyCode::Char('a'), KeyModifiers::CTRL, cx),
+                    "right" => self.input(KeyCode::Char('e'), KeyModifiers::CTRL, cx),
+                    "up" | "down"
+                        if self
+                            .session
+                            .as_ref()
+                            .is_some_and(|session| session.terminal.is_alt_screen_active()) =>
+                    {
+                        let up = stroke.key == "up";
+                        // shortcut: Pico detection needs its banner, use app integration if custom titles are needed.
+                        let pico = self.session.as_ref().is_some_and(|session| {
+                            session.terminal.screen().lines_in_phys_range(0..1)[0]
+                                .as_str()
+                                .trim_start()
+                                .starts_with("UW PICO ")
+                        });
+                        if pico {
+                            self.input(KeyCode::Char('w'), KeyModifiers::CTRL, cx);
+                            self.input(
+                                KeyCode::Char(if up { 'y' } else { 'v' }),
+                                KeyModifiers::CTRL,
+                                cx,
+                            );
+                        } else {
+                            self.input(
+                                if up { KeyCode::Home } else { KeyCode::End },
+                                KeyModifiers::CTRL,
+                                cx,
+                            );
+                        }
+                    }
+                    "up" => self.set_scroll_offset(f32::INFINITY, cx),
+                    "down" => self.set_scroll_offset(0., cx),
+                    _ => return,
+                }
+                cx.stop_propagation();
+            }
+            return;
+        }
         if stroke.key == "escape" && self.search_open {
             self.close_search(window, cx);
             cx.stop_propagation();
@@ -671,6 +715,37 @@ impl TerminalView {
             self.click_anchor = None;
             self.drag_selection = None;
             cx.notify();
+            cx.stop_propagation();
+            return;
+        }
+        if stroke.modifiers
+            == (Modifiers {
+                alt: true,
+                ..Modifiers::default()
+            })
+            && matches!(stroke.key.as_str(), "left" | "right")
+        {
+            let left = stroke.key == "left";
+            let (key, modifiers) = if self
+                .session
+                .as_ref()
+                .is_some_and(|session| session.terminal.is_alt_screen_active())
+            {
+                (
+                    if left {
+                        KeyCode::LeftArrow
+                    } else {
+                        KeyCode::RightArrow
+                    },
+                    KeyModifiers::CTRL,
+                )
+            } else {
+                (
+                    KeyCode::Char(if left { 'b' } else { 'f' }),
+                    KeyModifiers::ALT,
+                )
+            };
+            self.input(key, modifiers, cx);
             cx.stop_propagation();
             return;
         }
@@ -3740,6 +3815,15 @@ mod tests {
                 ("shift-tab", b"\x1b[Z"),
                 ("enter", b"\r"),
                 ("up", b"\x1b[A"),
+                ("down", b"\x1b[B"),
+                ("right", b"\x1b[C"),
+                ("left", b"\x1b[D"),
+                ("cmd-left", b"\x01"),
+                ("cmd-right", b"\x05"),
+                ("alt-left", b"\x1bb"),
+                ("alt-right", b"\x1bf"),
+                ("alt-shift-left", b"\x1b[1;4D"),
+                ("alt-shift-right", b"\x1b[1;4C"),
                 ("ctrl-c", b"\x03"),
             ] {
                 window.press(key, cx);
@@ -3752,6 +3836,12 @@ mod tests {
                     expected,
                     "{key}"
                 );
+            }
+            for key in ["cmd-up", "cmd-down"] {
+                window.press(key, cx);
+                assert_eq!(view.read(cx).scroll_offset, 0.);
+                assert!(view.read(cx).focus.is_focused(window));
+                assert!(bytes.try_recv().is_err());
             }
             cx.write_to_clipboard(ClipboardItem::new_string("hello".into()));
             window.press(
@@ -3767,6 +3857,76 @@ mod tests {
                 b"hello"
             );
             assert!(view.read(cx).focus.is_focused(window));
+        })
+        .unwrap();
+    }
+
+    #[gpui_kit::test]
+    fn modified_arrows_navigate_alternate_screen_editors(cx: &mut TestAppContext) {
+        let (handle, view, bytes) = open_terminal(cx);
+        cx.update_window(handle.into(), |_, window, cx| {
+            window.render_frame(cx);
+            for (banner, application_cursor_keys, up, down) in [
+                (
+                    "GNU nano 8.0",
+                    false,
+                    b"\x1b[1;5H".as_slice(),
+                    b"\x1b[1;5F".as_slice(),
+                ),
+                ("GNU nano 8.0", true, b"\x1b[1;5H", b"\x1b[1;5F"),
+                ("  UW PICO 5.09", false, b"\x17\x19", b"\x17\x16"),
+            ] {
+                view.update(cx, |view, cx| {
+                    let terminal = &mut view.session.as_mut().unwrap().terminal;
+                    terminal.advance_bytes(b"\x1b[?1049h\x1b[H\x1b[2J");
+                    terminal.advance_bytes(banner);
+                    terminal.advance_bytes(if application_cursor_keys {
+                        b"\x1b[?1h"
+                    } else {
+                        b"\x1b[?1l"
+                    });
+                    cx.notify();
+                });
+                for (key, expected) in [
+                    ("cmd-up", up),
+                    ("cmd-down", down),
+                    ("cmd-left", b"\x01"),
+                    ("cmd-right", b"\x05"),
+                    ("alt-left", b"\x1b[1;5D"),
+                    ("alt-right", b"\x1b[1;5C"),
+                ] {
+                    window.press(key, cx);
+                    let mut actual = Vec::new();
+                    while actual.len() < expected.len() {
+                        actual.extend(bytes.recv_timeout(Duration::from_secs(1)).unwrap());
+                    }
+                    assert_eq!(actual, expected, "{banner}: {key}");
+                    assert_eq!(view.read(cx).scroll_offset, 0.);
+                    assert!(view.read(cx).focus.is_focused(window));
+                    assert!(bytes.try_recv().is_err());
+                }
+                view.update(cx, |view, cx| {
+                    view.session
+                        .as_mut()
+                        .unwrap()
+                        .terminal
+                        .advance_bytes(b"\x1b[?1049l");
+                    cx.notify();
+                });
+                window.press("cmd-up", cx);
+                window.press("cmd-down", cx);
+                assert!(
+                    bytes.try_recv().is_err(),
+                    "leaving the editor restores history scrolling"
+                );
+                for (key, expected) in [("alt-left", b"\x1bb"), ("alt-right", b"\x1bf")] {
+                    window.press(key, cx);
+                    assert_eq!(
+                        bytes.recv_timeout(Duration::from_secs(1)).unwrap(),
+                        expected
+                    );
+                }
+            }
         })
         .unwrap();
     }
@@ -4096,7 +4256,7 @@ mod tests {
 
     #[gpui_kit::test]
     fn wrapped_scrollback_renders_scrolls_and_copies(cx: &mut TestAppContext) {
-        let (handle, view, _bytes) = open_terminal(cx);
+        let (handle, view, bytes) = open_terminal(cx);
         cx.update_window(handle.into(), |_, window, cx| {
             window.render_frame(cx);
             view.update(cx, |view, cx| {
@@ -4113,20 +4273,25 @@ mod tests {
             });
             window.render_frame(cx);
             window.click("terminal", cx);
-            window.press("shift-home", cx);
-            let terminal = view.read(cx);
-            let session = terminal.session.as_ref().unwrap();
-            assert_eq!(terminal.scroll_offset, 3500.);
-            let rows = session.terminal.screen().physical_rows;
-            let expected = (3701 - rows..3701)
-                .map(|row| format!("row-{row:04}"))
-                .collect::<Vec<_>>()
-                .join("\n");
-            assert_eq!(
-                super::screen_text(session, terminal.scroll_offset),
-                expected
-            );
-            window.press("shift-end", cx);
+            for (top, bottom) in [("shift-home", "shift-end"), ("cmd-up", "cmd-down")] {
+                window.press(top, cx);
+                let terminal = view.read(cx);
+                let session = terminal.session.as_ref().unwrap();
+                assert_eq!(terminal.scroll_offset, 3500.);
+                let rows = session.terminal.screen().physical_rows;
+                let expected = (3701 - rows..3701)
+                    .map(|row| format!("row-{row:04}"))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                assert_eq!(
+                    super::screen_text(session, terminal.scroll_offset),
+                    expected
+                );
+                window.press(bottom, cx);
+                assert_eq!(view.read(cx).scroll_offset, 0.);
+                assert!(view.read(cx).focus.is_focused(window));
+                assert!(bytes.try_recv().is_err());
+            }
             window.press("cmd-alt-c", cx);
             let session = view.read(cx).session.as_ref().unwrap();
             assert_eq!(

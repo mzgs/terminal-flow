@@ -39,6 +39,8 @@ The goal is to reduce the time spent looking up commands and interpreting failur
 - Switch tabs and panes with the keyboard, close individual panes, and restart a stopped shell.
 - Reveal the local working directory in the system file manager, or open the SFTP panel for an SSH terminal.
 - Scrollback with mouse-wheel, trackpad, and draggable scrollbar support.
+- **⌘Left/Right** move to the start/end of the shell line; **⌘Up/Down** scroll to the top/bottom of terminal history, or jump to the start/end of the file in nano (including macOS's bundled Pico).
+- **Option+Left/Right** move the cursor backward/forward by word in the shell and nano/Pico.
 - Per-pane zoom, reset to actual size, and a temporary status bar for shell and transfer messages.
 
 ### Selection, clipboard, and search
@@ -276,6 +278,9 @@ CI release ZIPs use ad-hoc signing; Apple notarization is not configured.
 | Command palette | ⌘P |
 | Find in terminal | ⌘F |
 | Next / previous search result | ⌘G / ⌘⇧G |
+| Start / end of shell line | ⌘← / ⌘→ |
+| Previous / next word | ⌥← / ⌥→ |
+| Top / bottom of terminal history, or start / end of file in nano | ⌘↑ / ⌘↓ |
 | Copy selection | ⌘C or ⌘⇧C |
 | Extend text selection | ⇧← / ⇧→ / ⇧↑ / ⇧↓ |
 | Open selected link or file | ⌘Enter |
