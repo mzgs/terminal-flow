@@ -2429,6 +2429,42 @@ mod tests {
             .unwrap();
     }
 
+    #[cfg(target_os = "macos")]
+    #[gpui_kit::test]
+    fn ctrl_t_reaches_the_terminal_while_cmd_t_opens_a_tab(cx: &mut TestAppContext) {
+        let (handle, workspace) = open(cx);
+        let terminal = cx.update(|cx| workspace.read(cx).tabs[0].panes[0].terminal.clone());
+        let (bytes, _output) = cx.update(|cx| capture(&terminal, cx));
+        for alternate_screen in [false, true] {
+            cx.update_window(handle.into(), |_, window, cx| {
+                terminal.update(cx, |view, cx| {
+                    if alternate_screen {
+                        view.session
+                            .as_mut()
+                            .unwrap()
+                            .terminal
+                            .advance_bytes(b"\x1b[?1049h");
+                    }
+                    cx.notify();
+                });
+                window.render_frame(cx);
+                window.press("ctrl-t", cx);
+                assert_eq!(workspace.read(cx).tabs.len(), 1);
+                assert!(terminal.read(cx).focus.is_focused(window));
+            })
+            .unwrap();
+            cx.run_until_parked();
+            assert_eq!(bytes.try_iter().flatten().collect::<Vec<_>>(), b"\x14");
+        }
+        cx.update_window(handle.into(), |_, window, cx| {
+            window.press("cmd-t", cx);
+            assert_eq!(workspace.read(cx).tabs.len(), 2);
+            assert!(bytes.try_recv().is_err());
+            window.remove_window();
+        })
+        .unwrap();
+    }
+
     #[gpui_kit::test]
     fn ctrl_p_reaches_the_terminal_without_opening_the_palette(cx: &mut TestAppContext) {
         let (handle, workspace) = open(cx);
@@ -3279,7 +3315,14 @@ mod tests {
             assert_eq!(workspace.read(cx).active, first.entity_id());
             assert!(first.read(cx).focus.is_focused(window));
             for _ in 0..9 {
-                window.press("ctrl-t", cx);
+                window.press(
+                    if cfg!(target_os = "macos") {
+                        "cmd-t"
+                    } else {
+                        "ctrl-t"
+                    },
+                    cx,
+                );
             }
             window.render_frame(cx);
             assert_eq!(workspace.read(cx).tabs.len(), 10);

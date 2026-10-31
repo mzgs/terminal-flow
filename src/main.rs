@@ -2841,6 +2841,7 @@ fn bind_keys(cx: &mut App) {
         KeyBinding::new("cmd-shift-s", ManageSshServers, Some("Workspace")),
         KeyBinding::new("ctrl-shift-s", ManageSshServers, Some("Workspace")),
         KeyBinding::new("cmd-t", NewTab, Some("Workspace")),
+        #[cfg(not(target_os = "macos"))]
         KeyBinding::new("ctrl-t", NewTab, Some("Workspace")),
         KeyBinding::new("cmd-d", SplitRight, Some("Workspace")),
         KeyBinding::new("ctrl-shift-d", SplitRight, Some("Workspace")),
