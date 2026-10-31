@@ -1,6 +1,6 @@
 cask "terminalflow" do
-  version "1.0.12"
-  sha256 "232b44cefa5af2bbef841573136c0aa1a2f2d912b4040bbe6d22700e770d7da4"
+  version "1.0.13"
+  sha256 "62abbb75dfe8779d5c0e42a88442832118d5b928b1ff2d531084c9faff8f93c1"
 
   url "https://github.com/mzgs/terminal-flow/releases/download/v#{version}/TerminalFlow-mac-arm64.zip"
   name "TerminalFlow"
