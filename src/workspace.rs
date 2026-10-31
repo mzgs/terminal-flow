@@ -992,14 +992,15 @@ impl Workspace {
         if !self.is_splittable()
             && stroke.key == "d"
             && ((stroke.modifiers.platform && !stroke.modifiers.control && !stroke.modifiers.alt)
-                || (stroke.modifiers.control
+                || (!cfg!(target_os = "macos")
+                    && stroke.modifiers.control
                     && !stroke.modifiers.platform
                     && (stroke.modifiers.shift != stroke.modifiers.alt)))
         {
             cx.stop_propagation();
             return;
         }
-        if (stroke.modifiers.platform || stroke.modifiers.control)
+        if (stroke.modifiers.platform || (!cfg!(target_os = "macos") && stroke.modifiers.control))
             && !stroke.modifiers.shift
             && !stroke.modifiers.alt
             && let Ok(number @ 1..=9) = stroke.key.parse::<usize>()
@@ -1406,7 +1407,11 @@ impl Render for Workspace {
                                     .bg(cx.theme().tab)
                                     .icon(IconName::Plus)
                                     .accessibility_label("New tab")
-                                    .tooltip("New tab (Cmd/Ctrl+T)")
+                                    .tooltip(if cfg!(target_os = "macos") {
+                                        "New tab (Cmd+T)"
+                                    } else {
+                                        "New tab (Ctrl+T)"
+                                    })
                                     .on_click(cx.listener(|view, _, window, cx| {
                                         view.new_tab(&NewTab, window, cx)
                                     })),
@@ -2085,26 +2090,36 @@ mod tests {
             assert_eq!(workspace.read(cx).tabs[0].active, second_id);
             window.press("cmd-alt-right", cx);
             assert_eq!(workspace.read(cx).tabs[0].active, tab_id);
-            window.press("ctrl-alt-left", cx);
+            window.press("cmd-alt-left", cx);
             assert_eq!(workspace.read(cx).tabs[0].active, second_id);
             window.press("cmd-f", cx);
             assert!(second.read(cx).search_open);
             assert!(!first.read(cx).search_open);
             window.press("escape", cx);
             window.press("cmd-shift-d", cx);
-            window.press("ctrl-shift-d", cx);
+            window.press("cmd-d", cx);
             assert_eq!(workspace.read(cx).tabs[0].axis, gpui_kit::Axis::Horizontal);
             assert_eq!(workspace.read(cx).tabs[0].panes.len(), 4);
             assert!(!window.is_action_available(&crate::SplitRight, cx));
             assert!(!window.is_action_available(&crate::SplitDown, cx));
             let fourth = workspace.read(cx).tabs[0].active_terminal().clone();
             let (fourth_input, _fourth_output) = capture(&fourth, cx);
-            window.press("ctrl-shift-d", cx);
-            window.press("ctrl-alt-d", cx);
             window.press("cmd-d", cx);
+            window.press("cmd-shift-d", cx);
             assert!(
                 fourth_input.try_recv().is_err(),
                 "disabled split shortcuts never reach the shell"
+            );
+            window.press("ctrl-shift-d", cx);
+            window.press("ctrl-alt-d", cx);
+            assert_eq!(
+                fourth_input.try_iter().flatten().collect::<Vec<_>>(),
+                if cfg!(target_os = "macos") {
+                    b"\x04\x1b\x04".as_slice()
+                } else {
+                    b"".as_slice()
+                },
+                "unbound Ctrl shortcuts must reach the shell even at the pane limit"
             );
             workspace.update(cx, |view, cx| {
                 view.split(gpui_kit::Axis::Vertical, window, cx)
@@ -2167,7 +2182,7 @@ mod tests {
             window.press("cmd-w", cx);
             assert!(remaining.iter().all(|pane| pane.read(cx).session.is_none()));
             assert_eq!(workspace.read(cx).tabs.len(), 1);
-            window.press("ctrl-shift-w", cx);
+            window.press("cmd-shift-w", cx);
             assert!(workspace.read(cx).tabs.is_empty());
         })
         .unwrap();
@@ -2431,9 +2446,14 @@ mod tests {
 
     #[cfg(target_os = "macos")]
     #[gpui_kit::test]
-    fn ctrl_t_reaches_the_terminal_while_cmd_t_opens_a_tab(cx: &mut TestAppContext) {
+    fn ctrl_shortcuts_reach_the_terminal_while_cmd_t_opens_a_tab(cx: &mut TestAppContext) {
         let (handle, workspace) = open(cx);
-        let terminal = cx.update(|cx| workspace.read(cx).tabs[0].panes[0].terminal.clone());
+        cx.update_window(handle.into(), |_, window, cx| {
+            window.press("cmd-t", cx);
+            window.press("cmd-d", cx);
+        })
+        .unwrap();
+        let terminal = cx.update(|cx| workspace.read(cx).tabs[1].active_terminal().clone());
         let (bytes, _output) = cx.update(|cx| capture(&terminal, cx));
         for alternate_screen in [false, true] {
             cx.update_window(handle.into(), |_, window, cx| {
@@ -2448,17 +2468,56 @@ mod tests {
                     cx.notify();
                 });
                 window.render_frame(cx);
-                window.press("ctrl-t", cx);
-                assert_eq!(workspace.read(cx).tabs.len(), 1);
-                assert!(terminal.read(cx).focus.is_focused(window));
+                for key in [
+                    "ctrl-t",
+                    "ctrl-w",
+                    "ctrl-shift-w",
+                    "ctrl-1",
+                    "ctrl-tab",
+                    "ctrl-shift-tab",
+                    "ctrl-shift-]",
+                    "ctrl-shift-[",
+                    "ctrl-shift-d",
+                    "ctrl-alt-d",
+                    "ctrl-alt-left",
+                    "ctrl-alt-right",
+                    "ctrl-shift-b",
+                    "ctrl-shift-p",
+                    "ctrl-f",
+                    "ctrl-shift-f",
+                    "ctrl-,",
+                    "ctrl-shift-s",
+                    "ctrl-shift-enter",
+                    "ctrl-c",
+                    "ctrl-shift-c",
+                    "ctrl-shift-a",
+                    "ctrl-shift-v",
+                    "ctrl-insert",
+                    "shift-insert",
+                    "ctrl-shift-=",
+                    "ctrl-shift--",
+                    "ctrl-shift-0",
+                    "ctrl-shift-k",
+                    "ctrl-o",
+                    "ctrl-s",
+                ] {
+                    window.press(key, cx);
+                    let input = bytes.try_iter().flatten().collect::<Vec<_>>();
+                    assert!(!input.is_empty(), "{key} did not reach the terminal");
+                    if key == "ctrl-t" {
+                        assert_eq!(input, b"\x14");
+                    }
+                    assert_eq!(workspace.read(cx).tabs.len(), 2, "{key}");
+                    assert_eq!(workspace.read(cx).tabs[1].panes.len(), 2, "{key}");
+                    assert!(terminal.read(cx).focus.is_focused(window), "{key}");
+                }
             })
             .unwrap();
             cx.run_until_parked();
-            assert_eq!(bytes.try_iter().flatten().collect::<Vec<_>>(), b"\x14");
         }
         cx.update_window(handle.into(), |_, window, cx| {
             window.press("cmd-t", cx);
-            assert_eq!(workspace.read(cx).tabs.len(), 2);
+            assert_eq!(workspace.read(cx).tabs.len(), 3);
             assert!(bytes.try_recv().is_err());
             window.remove_window();
         })
@@ -2600,7 +2659,7 @@ mod tests {
                 bytes.try_recv().is_err(),
                 "palette keys must not reach the shell"
             );
-            window.press("ctrl-shift-p", cx);
+            window.press("cmd-p", cx);
         })
         .unwrap();
         cx.run_until_parked();
@@ -3199,7 +3258,7 @@ mod tests {
             first.update(cx, |view, cx| view.read_output(cx));
             assert!(Workspace::title(first.read(cx)).starts_with("another project — "));
             assert!(Workspace::title(second.read(cx)).starts_with("~ — "));
-            window.press("ctrl-1", cx);
+            window.press("cmd-1", cx);
             assert_eq!(workspace.read(cx).active, first.entity_id());
             assert!(first.read(cx).focus.is_focused(window));
             assert!(
@@ -3225,11 +3284,11 @@ mod tests {
                 .selection
                 .unwrap()
                 .text(&first.read(cx).session.as_ref().unwrap().terminal);
-            window.press("ctrl-tab", cx);
+            window.press("cmd-shift-]", cx);
             assert_eq!(workspace.read(cx).active, second.entity_id());
             assert_eq!(second.read(cx).font_scale, 1.);
             assert!(second.read(cx).selection.is_none());
-            window.press("ctrl-tab", cx);
+            window.press("cmd-shift-]", cx);
             assert_eq!(workspace.read(cx).active, first.entity_id());
             assert_eq!(first.read(cx).font_scale, scale);
             assert_eq!(first.read(cx).scroll_offset, scroll_offset);
@@ -3241,7 +3300,7 @@ mod tests {
                     .text(&first.read(cx).session.as_ref().unwrap().terminal),
                 selection
             );
-            window.press("ctrl-shift-tab", cx);
+            window.press("cmd-shift-[", cx);
             assert_eq!(workspace.read(cx).active, second.entity_id());
             window.press("cmd-shift-}", cx);
             assert_eq!(workspace.read(cx).active, first.entity_id());
@@ -3289,7 +3348,7 @@ mod tests {
                 cx.notify();
             });
             window.press("cmd-1", cx);
-            window.press("ctrl-tab", cx);
+            window.press("cmd-shift-]", cx);
             assert_eq!(workspace.read(cx).active, second.entity_id());
             assert!(second.read(cx).focus.is_focused(window));
             window.press("cmd-1", cx);
@@ -3310,7 +3369,7 @@ mod tests {
             assert_eq!(workspace.read(cx).tabs.len(), 2);
             assert_eq!(workspace.read(cx).active, second.entity_id());
             assert!(third.read(cx).session.is_none());
-            window.press("ctrl-w", cx);
+            window.press("cmd-w", cx);
             assert!(second.read(cx).session.is_none());
             assert_eq!(workspace.read(cx).active, first.entity_id());
             assert!(first.read(cx).focus.is_focused(window));

@@ -269,7 +269,8 @@ CI release ZIPs use ad-hoc signing; Apple notarization is not configured.
 | Action | macOS shortcut |
 | --- | --- |
 | New tab | ⌘T |
-| Next / previous tab | ⌃Tab / ⌃⇧Tab, or ⌘⇧] / ⌘⇧[ |
+| Next / previous tab | ⌘⇧] / ⌘⇧[ |
+| Select tab 1–9 | ⌘1–9 |
 | Split right | ⌘D |
 | Split down | ⌘⇧D |
 | Next / previous pane | ⌘⌥→ / ⌘⌥← |
@@ -297,4 +298,4 @@ CI release ZIPs use ad-hoc signing; Apple notarization is not configured.
 | Zoom in / out / reset | ⌘+ / ⌘− / ⌘0 |
 | Quit | ⌘Q |
 
-Additional Ctrl bindings are available: **Ctrl+Shift+P** for the palette, **Ctrl+T** for a new tab, **Ctrl+Shift+D / Ctrl+Alt+D** for splits, **Ctrl+Alt+←/→** for panes, **Ctrl+W** to close a tab, **Ctrl+Shift+W** to close a pane, **Ctrl+Shift+F** for search, **Ctrl+Shift+C/V/A** for copy/paste/select all, **Ctrl+Shift+K** to clear, **Ctrl+Shift+B** for status, **Ctrl+Shift+S** for servers, **Ctrl+,** for settings, and **Ctrl+Shift+=/−/0** for zoom. **Ctrl+Insert / Shift+Insert** also copy and paste. On non-macOS platforms, **Ctrl+F**, **Ctrl+O**, and **Ctrl+S** are also bound to search, open, and editor save.
+On macOS, app shortcuts use **⌘**; Ctrl combinations pass through to terminal programs. On Windows and Linux, **Ctrl+Shift+P** opens the palette, **Ctrl+T** opens a new tab, **Ctrl+Tab / Ctrl+Shift+Tab** switch tabs, **Ctrl+1–9** selects a tab, **Ctrl+Shift+D / Ctrl+Alt+D** split panes, **Ctrl+Alt+←/→** switch panes, **Ctrl+W** closes a tab, **Ctrl+Shift+W** closes a pane, **Ctrl+F / Ctrl+Shift+F** open search, **Ctrl+Shift+C/V/A** copy/paste/select all, **Ctrl+Shift+K** clears, **Ctrl+Shift+B** toggles status, **Ctrl+Shift+S** opens servers, **Ctrl+,** opens settings, and **Ctrl+Shift+=/−/0** adjust zoom. **Ctrl+Insert / Shift+Insert** also copy and paste; **Ctrl+O** opens a file, and **Ctrl+S** saves in the editor.

@@ -2827,41 +2827,56 @@ impl EntityInputHandler for TerminalView {
 fn bind_keys(cx: &mut App) {
     cx.bind_keys([
         KeyBinding::new("cmd-shift-b", ShowStatusBar, Some("TerminalPane")),
+        #[cfg(not(target_os = "macos"))]
         KeyBinding::new("ctrl-shift-b", ShowStatusBar, Some("TerminalPane")),
         KeyBinding::new("cmd-p", OpenCommandPalette, Some("Workspace")),
+        #[cfg(not(target_os = "macos"))]
         KeyBinding::new("ctrl-shift-p", OpenCommandPalette, Some("Workspace")),
         KeyBinding::new("cmd-f", Find, Some("TerminalPane")),
         #[cfg(not(target_os = "macos"))]
         KeyBinding::new("ctrl-f", Find, Some("TerminalPane")),
+        #[cfg(not(target_os = "macos"))]
         KeyBinding::new("ctrl-shift-f", Find, Some("TerminalPane")),
         KeyBinding::new("cmd-g", FindNext, Some("TerminalPane")),
         KeyBinding::new("cmd-shift-g", FindPrevious, Some("TerminalPane")),
         KeyBinding::new("cmd-,", OpenSettings, Some("Workspace")),
+        #[cfg(not(target_os = "macos"))]
         KeyBinding::new("ctrl-,", OpenSettings, Some("Workspace")),
         KeyBinding::new("cmd-shift-s", ManageSshServers, Some("Workspace")),
+        #[cfg(not(target_os = "macos"))]
         KeyBinding::new("ctrl-shift-s", ManageSshServers, Some("Workspace")),
         KeyBinding::new("cmd-t", NewTab, Some("Workspace")),
         #[cfg(not(target_os = "macos"))]
         KeyBinding::new("ctrl-t", NewTab, Some("Workspace")),
         KeyBinding::new("cmd-d", SplitRight, Some("Workspace")),
+        #[cfg(not(target_os = "macos"))]
         KeyBinding::new("ctrl-shift-d", SplitRight, Some("Workspace")),
         KeyBinding::new("cmd-shift-d", SplitDown, Some("Workspace")),
+        #[cfg(not(target_os = "macos"))]
         KeyBinding::new("ctrl-alt-d", SplitDown, Some("Workspace")),
         KeyBinding::new("cmd-shift-w", ClosePane, Some("Workspace")),
+        #[cfg(not(target_os = "macos"))]
         KeyBinding::new("ctrl-shift-w", ClosePane, Some("Workspace")),
         KeyBinding::new("cmd-alt-right", NextPane, Some("Workspace")),
+        #[cfg(not(target_os = "macos"))]
         KeyBinding::new("ctrl-alt-right", NextPane, Some("Workspace")),
         KeyBinding::new("cmd-alt-left", PreviousPane, Some("Workspace")),
+        #[cfg(not(target_os = "macos"))]
         KeyBinding::new("ctrl-alt-left", PreviousPane, Some("Workspace")),
         KeyBinding::new("cmd-w", CloseTab, Some("Workspace")),
+        #[cfg(not(target_os = "macos"))]
         KeyBinding::new("ctrl-w", CloseTab, Some("Workspace")),
+        #[cfg(not(target_os = "macos"))]
         KeyBinding::new("ctrl-tab", NextTab, Some("Workspace")),
+        #[cfg(not(target_os = "macos"))]
         KeyBinding::new("ctrl-shift-tab", PreviousTab, Some("Workspace")),
         KeyBinding::new("cmd-shift-]", NextTab, Some("Workspace")),
         KeyBinding::new("cmd-shift-}", NextTab, Some("Workspace")),
         KeyBinding::new("cmd-shift-[", PreviousTab, Some("Workspace")),
         KeyBinding::new("cmd-shift-{", PreviousTab, Some("Workspace")),
+        #[cfg(not(target_os = "macos"))]
         KeyBinding::new("ctrl-shift-]", NextTab, Some("Workspace")),
+        #[cfg(not(target_os = "macos"))]
         KeyBinding::new("ctrl-shift-[", PreviousTab, Some("Workspace")),
         // Let terminal key events reach WezTerm instead of the root's GUI navigation.
         KeyBinding::new("tab", NoAction, Some("Terminal")),
@@ -2870,25 +2885,35 @@ fn bind_keys(cx: &mut App) {
         KeyBinding::new("ctrl-c", NoAction, Some("Terminal")),
         KeyBinding::new("cmd-c", Copy, Some("Terminal")),
         KeyBinding::new("cmd-enter", OpenSelection, Some("Terminal")),
+        #[cfg(not(target_os = "macos"))]
         KeyBinding::new("ctrl-shift-enter", OpenSelection, Some("Terminal")),
         KeyBinding::new("cmd-shift-c", Copy, Some("Terminal")),
         KeyBinding::new("cmd-alt-c", CopyScreen, Some("Terminal")),
         KeyBinding::new("cmd-a", SelectAll, Some("Terminal")),
         KeyBinding::new("cmd-v", Paste, Some("Terminal")),
         KeyBinding::new("cmd-r", Restart, Some("Terminal")),
+        #[cfg(not(target_os = "macos"))]
         KeyBinding::new("ctrl-shift-c", Copy, Some("Terminal")),
+        #[cfg(not(target_os = "macos"))]
         KeyBinding::new("ctrl-shift-a", SelectAll, Some("Terminal")),
+        #[cfg(not(target_os = "macos"))]
         KeyBinding::new("ctrl-insert", Copy, Some("Terminal")),
+        #[cfg(not(target_os = "macos"))]
         KeyBinding::new("shift-insert", Paste, Some("Terminal")),
+        #[cfg(not(target_os = "macos"))]
         KeyBinding::new("ctrl-shift-v", Paste, Some("Terminal")),
         KeyBinding::new("cmd-=", ZoomIn, Some("Terminal")),
         KeyBinding::new("cmd-+", ZoomIn, Some("Terminal")),
         KeyBinding::new("cmd--", ZoomOut, Some("Terminal")),
         KeyBinding::new("cmd-0", ResetZoom, Some("Terminal")),
+        #[cfg(not(target_os = "macos"))]
         KeyBinding::new("ctrl-shift-=", ZoomIn, Some("Terminal")),
+        #[cfg(not(target_os = "macos"))]
         KeyBinding::new("ctrl-shift--", ZoomOut, Some("Terminal")),
+        #[cfg(not(target_os = "macos"))]
         KeyBinding::new("ctrl-shift-0", ResetZoom, Some("Terminal")),
         KeyBinding::new("cmd-k", ClearTerminal, Some("Terminal")),
+        #[cfg(not(target_os = "macos"))]
         KeyBinding::new("ctrl-shift-k", ClearTerminal, Some("Terminal")),
         KeyBinding::new("cmd-q", Quit, None),
         KeyBinding::new("cmd-o", OpenFile, Some("Workspace")),
