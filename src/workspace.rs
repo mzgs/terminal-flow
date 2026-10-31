@@ -858,8 +858,8 @@ impl Workspace {
         }
         self.tabs.remove(ix);
         if self.tabs.is_empty() {
+            self.new_tab(&NewTab, window, cx);
             self.flush(cx);
-            window.remove_window();
             return;
         }
         let next = if self.active == id {
@@ -2183,7 +2183,10 @@ mod tests {
             assert!(remaining.iter().all(|pane| pane.read(cx).session.is_none()));
             assert_eq!(workspace.read(cx).tabs.len(), 1);
             window.press("cmd-shift-w", cx);
-            assert!(workspace.read(cx).tabs.is_empty());
+            assert_eq!(workspace.read(cx).tabs.len(), 1);
+            let replacement = workspace.read(cx).tabs[0].active_terminal();
+            assert!(replacement.read(cx).session.is_some());
+            assert!(replacement.read(cx).focus.is_focused(window));
         })
         .unwrap();
     }
@@ -3424,11 +3427,20 @@ mod tests {
             }
             assert_eq!(workspace.read(cx).tabs.len(), 1);
             window.press("cmd-w", cx);
-            assert!(workspace.read(cx).tabs.is_empty());
+            assert_eq!(workspace.read(cx).tabs.len(), 1);
             assert!(first.read(cx).session.is_none());
+            let replacement = workspace.read(cx).tabs[0].active_terminal().clone();
+            assert_ne!(replacement.entity_id(), first.entity_id());
+            assert_eq!(workspace.read(cx).active, replacement.entity_id());
+            assert!(replacement.read(cx).session.is_some());
+            assert!(replacement.read(cx).focus.is_focused(window));
+            window.click(("close-tab", replacement.entity_id()), cx);
+            assert!(replacement.read(cx).session.is_none());
+            assert_eq!(workspace.read(cx).tabs.len(), 1);
+            assert_ne!(workspace.read(cx).active, replacement.entity_id());
         })
         .unwrap();
-        cx.update(|cx| assert!(cx.windows().is_empty()));
+        cx.update(|cx| assert_eq!(cx.windows().len(), 1));
     }
     #[gpui_kit::test]
     fn middle_click_closes_the_target_tab_and_keeps_terminal_focus(cx: &mut TestAppContext) {
@@ -3468,11 +3480,16 @@ mod tests {
                 ClickOptions::new().with_button(MouseButton::Middle),
                 cx,
             );
-            assert!(workspace.read(cx).tabs.is_empty());
+            assert_eq!(workspace.read(cx).tabs.len(), 1);
             assert!(second.read(cx).session.is_none());
+            let replacement = workspace.read(cx).tabs[0].active_terminal();
+            assert_ne!(replacement.entity_id(), second.entity_id());
+            assert_eq!(workspace.read(cx).active, replacement.entity_id());
+            assert!(replacement.read(cx).session.is_some());
+            assert!(replacement.read(cx).focus.is_focused(window));
         })
         .unwrap();
-        cx.update(|cx| assert!(cx.windows().is_empty()));
+        cx.update(|cx| assert_eq!(cx.windows().len(), 1));
     }
 
     fn pointer_move(window: &mut Window, position: Point<Pixels>, cx: &mut App) {
